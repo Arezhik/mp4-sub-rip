@@ -1,0 +1,76 @@
+# Backup recipe for XcodeGen, the same arrangement PGS2SRT uses. The checked-in
+# MP4SubRip.xcodeproj is the source of truth; this file only matters if you ever
+# regenerate it: `brew install xcodegen`, then `cd App && xcodegen generate`.
+# If you add or rename an app .swift file, update BOTH this file and the .xcodeproj
+# (or regenerate). The Xcode project must not sit next to Package.swift, and the
+# package must not be named MP4SubRip, or Xcode reports the products as missing.
+name: MP4SubRip
+options:
+  bundleIdPrefix: com.arezhik
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+settings:
+  MACOSX_DEPLOYMENT_TARGET: "14.0"
+  SDKROOT: macosx
+  SUPPORTED_PLATFORMS: macosx
+  SUPPORTS_MACCATALYST: NO
+  SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+  SWIFT_VERSION: "5.0"
+  configs:
+    Debug:
+      # Do not set ARCHS here. Debug follows the run destination (My Mac),
+      # so the app and the package module are the same chip.
+      ONLY_ACTIVE_ARCH: YES
+    Release:
+      ONLY_ACTIVE_ARCH: NO
+packages:
+  CorePackage:
+    path: ..
+targets:
+  MP4SubRip:
+    type: application
+    platform: macOS
+    sources:
+      - path: .
+        includes:
+          - "*.swift"
+          - Info.plist
+    # App Sandbox stays off. A sandboxed app can read a dropped file but cannot
+    # create a new file next to it, and ad-hoc "Sign to Run Locally" has no
+    # provisioning profile for a sandbox entitlement.
+    dependencies:
+      - package: CorePackage
+        product: MP4SubRipCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.arezhik.MP4SubRip
+        PRODUCT_NAME: MP4SubRip
+        GENERATE_INFOPLIST_FILE: YES
+        # Document types (input files and folders) live in Info.plist.
+        INFOPLIST_FILE: Info.plist
+        # Version: change with scripts/bump-version.sh only, so this file and the
+        # .xcodeproj stay in sync. MARKETING_VERSION is what users see (MAJOR.MINOR.PATCH).
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGNING_REQUIRED: NO
+        CODE_SIGNING_ALLOWED: YES
+        ENABLE_HARDENED_RUNTIME: NO
+        INFOPLIST_KEY_CFBundleDisplayName: MP4SubRip
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.utilities
+        LD_RUNPATH_SEARCH_PATHS:
+          - "$(inherited)"
+          - "@executable_path/../Frameworks"
+        SWIFT_EMIT_LOC_STRINGS: YES
+        ENABLE_PREVIEWS: YES
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
+      configs:
+        Debug:
+          ONLY_ACTIVE_ARCH: YES
+        Release:
+          ONLY_ACTIVE_ARCH: NO
+          ARCHS: [arm64, x86_64]
+    scheme:
+      gatherCoverageData: false
