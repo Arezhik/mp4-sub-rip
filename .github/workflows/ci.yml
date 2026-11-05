@@ -1,0 +1,153 @@
+# Copied from PGS2SRT's .github/workflows/ci.yml and generalized.
+# Three jobs: Linux tests (what cloud agents can also run), macOS tests, and the
+# universal unsigned app with MP4SubRip-universal.zip as the download.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Linux tests
+    runs-on: ubuntu-latest
+    container:
+      image: swift:6.2.4
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+
+      - name: Version is in sync
+        # project.pbxproj, project.yml, and CHANGELOG.md must agree (scripts/bump-version.sh).
+        run: bash scripts/bump-version.sh --check
+
+      - name: Test
+        run: swift test -Xswiftc -strict-concurrency=complete -Xswiftc -warnings-as-errors
+
+      - name: Build
+        run: swift build -Xswiftc -strict-concurrency=complete -Xswiftc -warnings-as-errors
+
+  macos-tests:
+    name: macOS tests
+    runs-on: macos-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+
+      - name: Test
+        run: swift test -Xswiftc -strict-concurrency=complete -Xswiftc -warnings-as-errors
+
+  macos:
+    name: macOS universal app
+    # PGS2SRT runs this job on a runner labeled "xcode-27" so the build matches the
+    # Xcode on Arezhik's Mac. Generated with: macos-latest
+    runs-on: macos-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+
+      - name: Xcode version
+        run: xcodebuild -version
+
+      - name: Resolve local package
+        run: |
+          set -euo pipefail
+          rm -rf "$GITHUB_WORKSPACE/build" "$GITHUB_WORKSPACE/.build"
+          set +e
+          LOG=$(xcodebuild \
+            -resolvePackageDependencies \
+            -project App/MP4SubRip.xcodeproj \
+            -scheme MP4SubRip \
+            -derivedDataPath "$GITHUB_WORKSPACE/build" 2>&1)
+          code=$?
+          set -e
+          echo "$LOG"
+          test "$code" -eq 0
+          echo "$LOG" | grep -q "MP4SubRipKit"
+          echo "$LOG" | grep -qi "resolved source packages"
+          if echo "$LOG" | grep -q "Missing package product"; then
+            echo "Package products did not bind"
+            exit 1
+          fi
+
+      - name: Build Debug app
+        run: |
+          set -euo pipefail
+          rm -rf "$GITHUB_WORKSPACE/build-debug"
+          xcodebuild \
+            -project App/MP4SubRip.xcodeproj \
+            -scheme MP4SubRip \
+            -configuration Debug \
+            -destination 'platform=macOS,arch=arm64' \
+            -derivedDataPath "$GITHUB_WORKSPACE/build-debug" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+          BIN="$GITHUB_WORKSPACE/build-debug/Build/Products/Debug/MP4SubRip.app/Contents/MacOS/MP4SubRip"
+          if [ ! -f "$BIN" ]; then
+            BIN="$(find "$GITHUB_WORKSPACE/build-debug" -type f -path '*/Debug/MP4SubRip.app/Contents/MacOS/MP4SubRip' | head -1)"
+          fi
+          test -f "$BIN"
+          lipo -info "$BIN"
+          ARCHS="$(lipo -archs "$BIN")"
+          echo "Debug architectures: $ARCHS"
+          echo "$ARCHS" | grep -qw arm64
+          if echo "$ARCHS" | grep -qw x86_64; then
+            echo "Debug My Mac build included Intel. ONLY_ACTIVE_ARCH should keep it to arm64."
+            exit 1
+          fi
+
+      - name: Build universal app
+        run: |
+          xcodebuild \
+            -project App/MP4SubRip.xcodeproj \
+            -scheme MP4SubRip \
+            -configuration Release \
+            -destination 'generic/platform=macOS' \
+            -derivedDataPath "$GITHUB_WORKSPACE/build" \
+            ARCHS="arm64 x86_64" \
+            ONLY_ACTIVE_ARCH=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Verify both architectures and zip
+        run: |
+          set -euo pipefail
+          APP="$GITHUB_WORKSPACE/build/Build/Products/Release/MP4SubRip.app"
+          if [ ! -d "$APP" ]; then
+            APP="$(find "$GITHUB_WORKSPACE/build" -type d -name 'MP4SubRip.app' | head -1)"
+          fi
+          test -d "$APP"
+          BIN="$APP/Contents/MacOS/MP4SubRip"
+          test -f "$BIN"
+          lipo -info "$BIN"
+          ARCHS="$(lipo -archs "$BIN")"
+          echo "Architectures: $ARCHS"
+          echo "$ARCHS" | grep -qw arm64
+          echo "$ARCHS" | grep -qw x86_64
+          INFO="$APP/Contents/Info.plist"
+          test -f "$INFO"
+          plutil -extract CFBundleIdentifier raw "$INFO" | grep -qx com.arezhik.MP4SubRip
+          plutil -extract CFBundleDocumentTypes.0.LSItemContentTypes.0 raw "$INFO" | grep -qx public.folder
+          ENTS="$(codesign -d --entitlements :- "$APP" 2>/dev/null || true)"
+          if printf '%s' "$ENTS" | grep -q 'com.apple.security.app-sandbox'; then
+            echo "App Sandbox should stay off so output files can be written next to the input"
+            exit 1
+          fi
+          ditto -c -k --keepParent "$APP" "$GITHUB_WORKSPACE/MP4SubRip-universal.zip"
+          test -s "$GITHUB_WORKSPACE/MP4SubRip-universal.zip"
+
+      - name: Upload app
+        uses: actions/upload-artifact@v7
+        with:
+          path: MP4SubRip-universal.zip
+          if-no-files-found: error
+          archive: false
