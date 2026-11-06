@@ -1,7 +1,7 @@
 # MP4SubRip
 
 A native macOS app (SwiftUI, macOS 14.0 or later, universal for Apple silicon and Intel).
-It takes .mp4 files and folders. Describe what it does here in one sentence.
+Drop an MP4 on the window and it writes the embedded text subtitles out as .srt files.
 
 ## Use the window
 - Drop files or a folder on the window, or choose **Open…** (⌘O).
@@ -10,8 +10,8 @@ It takes .mp4 files and folders. Describe what it does here in one sentence.
 - **Settings** (⌘,) holds the output options.
 - **Help → Export Debug Log…** saves a log to the Desktop to send with a bug report.
 
-## Needs ffmpeg
-MP4SubRip runs `ffmpeg`, which isn't part of macOS. Install it with Homebrew (`brew install ffmpeg`) or from its website. The app looks in `/opt/homebrew/bin`, `/usr/local/bin`, `/Applications/ffmpeg*.app/Contents/MacOS`, then `PATH`. Record the version you tested in TESTERS.md, and test an Intel Mac early (PGS2SRT found MKVToolNix v97+ failing on an Intel Mac Pro while v96 worked).
+## Subtitles it reads
+Text tracks stored as tx3g (what ffmpeg calls `mov_text` when an SRT is muxed into an MP4). One track becomes `Movie.srt`. Several languages become `Movie.eng.srt`, `Movie.spa.srt`, and a forced track is marked `Movie.eng.forced.srt`. Bitmap subtitles, closed captions, and DRM-protected files are reported and skipped. ffmpeg is not used. The app still notes in the debug log whether ffmpeg is installed, so a later fallback has a place to start.
 
 ## Open it in Xcode and press Run
 1. Quit Xcode. In the repository folder, delete `.build` if you see one, then run `rm -rf ~/Library/Developer/Xcode/DerivedData/MP4SubRip-*`.

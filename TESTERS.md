@@ -4,8 +4,8 @@ Thanks for testing! This is an early build. Please try to break it and tell me w
 
 ## What you need
 - A Mac running macOS 14.0 or later (Apple silicon or Intel).
-- A few real .mp4 files, including a large one.
-- `ffmpeg` installed (`brew install ffmpeg`). Tested versions: <fill in>. If a newer version fails, tell me the version (`ffmpeg --version`).
+- A few real .mp4 files that contain SRT-style (text) subtitles, including one with more than one language if you have it. A large file is useful too.
+- ffmpeg is not required for this build. The debug log still says whether it was found.
 
 ## 1. Install
 1. Unzip `MP4SubRip-universal.zip` and drag **MP4SubRip.app** into **Applications**.
@@ -37,3 +37,5 @@ Thanks for testing! This is an early build. Please try to break it and tell me w
 
 ## Known limits in this build
 - Not signed by Apple, so the Open Anyway step is needed once.
+- Only text subtitles (tx3g). Image subtitles and closed captions are skipped with a message, not extracted.
+- One file at a time. The full queue (parallel, track chips, conflict prompt) is not in this build yet. Settings still choose Skip, Overwrite, or Add a number.
