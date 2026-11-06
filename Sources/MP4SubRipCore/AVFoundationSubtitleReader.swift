@@ -83,7 +83,7 @@ private final class AVFoundationSession: @unchecked Sendable {
 
     func inspect(file: URL) async throws -> MediaInspection {
         if isCancelled { throw CancellationError() }
-        let asset = AVURLAsset(url: file, options: Self.assetOptions)
+        let asset = Self.openAsset(file)
         if try await asset.load(.hasProtectedContent) {
             throw SubtitleExtractionError.protectedContent
         }
@@ -127,7 +127,7 @@ private final class AVFoundationSession: @unchecked Sendable {
         onSampleTime: @Sendable (Int) -> Void
     ) async throws -> [SubtitleCue] {
         if isCancelled || Task.isCancelled { throw CancellationError() }
-        let asset = AVURLAsset(url: file, options: Self.assetOptions)
+        let asset = Self.openAsset(file)
         if try await asset.load(.hasProtectedContent) {
             throw SubtitleExtractionError.protectedContent
         }
@@ -170,10 +170,13 @@ private final class AVFoundationSession: @unchecked Sendable {
 
     /// Precise duration makes AVFoundation walk the whole movie. Subtitle tracks
     /// don't need that, and a 50 GB rip on a network share shouldn't be scanned
-    /// just to list its text tracks.
-    private static let assetOptions: [String: Any] = [
-        AVURLAssetPreferPreciseDurationAndTimingKey: false
-    ]
+    /// just to list its text tracks. The options dictionary is built here, not
+    /// stored, because `[String: Any]` is not Sendable as a global.
+    private static func openAsset(_ file: URL) -> AVURLAsset {
+        AVURLAsset(url: file, options: [
+            AVURLAssetPreferPreciseDurationAndTimingKey: false
+        ])
+    }
 
     private static func title(of track: AVAssetTrack) async -> String? {
         do {
