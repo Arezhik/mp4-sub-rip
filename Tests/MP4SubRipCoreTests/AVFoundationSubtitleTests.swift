@@ -16,9 +16,12 @@ final class AVFoundationSubtitleTests: XCTestCase {
         let movie = directory.appendingPathComponent("Movie.mp4")
         try await TX3GFixture.write(to: movie, tracks: [
             TX3GFixture.Track(languageCode: "eng", samples: [
-                .init(text: "Hello", start: CMTime(value: 1, timescale: 1), duration: CMTime(value: 1, timescale: 1)),
-                .init(text: "", start: CMTime(value: 2, timescale: 1), duration: CMTime(value: 1, timescale: 1)),
-                .init(text: "World", start: CMTime(value: 3, timescale: 1), duration: CMTime(value: 1500, timescale: 1000), utf16: true)
+                // Start at zero. A cue that begins later is stored as media time
+                // from the first sample, so the reader would report it earlier
+                // than the time passed to the writer.
+                .init(text: "Hello", start: CMTime(value: 0, timescale: 1), duration: CMTime(value: 1, timescale: 1)),
+                .init(text: "", start: CMTime(value: 1, timescale: 1), duration: CMTime(value: 1, timescale: 1)),
+                .init(text: "World", start: CMTime(value: 2, timescale: 1), duration: CMTime(value: 1500, timescale: 1000), utf16: true)
             ])
         ])
 
@@ -33,7 +36,7 @@ final class AVFoundationSubtitleTests: XCTestCase {
         let srt = try String(contentsOf: URL(fileURLWithPath: outcome.written[0].path), encoding: .utf8)
         XCTAssertEqual(
             srt,
-            "1\n00:00:01,000 --> 00:00:02,000\nHello\n\n2\n00:00:03,000 --> 00:00:04,500\nWorld\n"
+            "1\n00:00:00,000 --> 00:00:01,000\nHello\n\n2\n00:00:02,000 --> 00:00:03,500\nWorld\n"
         )
     }
 
