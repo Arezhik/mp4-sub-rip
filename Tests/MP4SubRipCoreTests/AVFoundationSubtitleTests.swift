@@ -98,6 +98,12 @@ final class AVFoundationSubtitleTests: XCTestCase {
     }
 }
 
+/// AVAssetWriter is not Sendable. The finish callback is, so the writer stays in here.
+private final class WriterBox: @unchecked Sendable {
+    let writer: AVAssetWriter
+    init(_ writer: AVAssetWriter) { self.writer = writer }
+}
+
 private enum TX3GFixture {
     struct Sample {
         var text: String
@@ -166,12 +172,13 @@ private enum TX3GFixture {
         video.markAsFinished()
         writer.endSession(atSourceTime: CMTime(value: 5, timescale: 1))
 
+        let box = WriterBox(writer)
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            writer.finishWriting {
-                if writer.status == .completed {
+            box.writer.finishWriting {
+                if box.writer.status == .completed {
                     continuation.resume()
                 } else {
-                    continuation.resume(throwing: writer.error ?? fixtureError("The writer did not finish."))
+                    continuation.resume(throwing: box.writer.error ?? fixtureError("The writer did not finish."))
                 }
             }
         }
@@ -182,7 +189,7 @@ private enum TX3GFixture {
         let status = CMFormatDescriptionCreate(
             allocator: kCFAllocatorDefault,
             mediaType: kCMMediaType_Subtitle,
-            mediaSubtype: kCMTextFormatType_3GText,
+            mediaSubType: kCMTextFormatType_3GText,
             extensions: nil,
             formatDescriptionOut: &format
         )
