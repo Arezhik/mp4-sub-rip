@@ -184,13 +184,47 @@ private enum TX3GFixture {
         }
     }
 
+    /// A bare tx3g description is rejected when the file is finished
+    /// (`kCMFormatDescriptionBridgeError_InvalidParameter`, -12712). These are the
+    /// fields Apple's subtitle writer puts on the format description.
     private static func textFormat() throws -> CMFormatDescription {
+        let extensions: [String: Any] = [
+            kCMTextFormatDescriptionExtension_DisplayFlags as String: 0,
+            kCMTextFormatDescriptionExtension_BackgroundColor as String: [
+                kCMTextFormatDescriptionColor_Red as String: 0,
+                kCMTextFormatDescriptionColor_Green as String: 0,
+                kCMTextFormatDescriptionColor_Blue as String: 0,
+                kCMTextFormatDescriptionColor_Alpha as String: 255
+            ],
+            kCMTextFormatDescriptionExtension_DefaultTextBox as String: [
+                kCMTextFormatDescriptionRect_Top as String: 0,
+                kCMTextFormatDescriptionRect_Left as String: 0,
+                kCMTextFormatDescriptionRect_Bottom as String: 0,
+                kCMTextFormatDescriptionRect_Right as String: 0
+            ],
+            kCMTextFormatDescriptionExtension_DefaultStyle as String: [
+                kCMTextFormatDescriptionStyle_StartChar as String: 0,
+                kCMTextFormatDescriptionStyle_EndChar as String: 0,
+                kCMTextFormatDescriptionStyle_Font as String: 1,
+                kCMTextFormatDescriptionStyle_FontFace as String: 0,
+                kCMTextFormatDescriptionStyle_FontSize as String: 255,
+                kCMTextFormatDescriptionStyle_ForegroundColor as String: [
+                    kCMTextFormatDescriptionColor_Red as String: 255,
+                    kCMTextFormatDescriptionColor_Green as String: 255,
+                    kCMTextFormatDescriptionColor_Blue as String: 255,
+                    kCMTextFormatDescriptionColor_Alpha as String: 255
+                ]
+            ],
+            kCMTextFormatDescriptionExtension_HorizontalJustification as String: 0,
+            kCMTextFormatDescriptionExtension_VerticalJustification as String: 0,
+            kCMTextFormatDescriptionExtension_FontTable as String: ["1": "Sans-Serif"]
+        ]
         var format: CMFormatDescription?
         let status = CMFormatDescriptionCreate(
             allocator: kCFAllocatorDefault,
             mediaType: kCMMediaType_Subtitle,
             mediaSubType: kCMTextFormatType_3GText,
-            extensions: nil,
+            extensions: extensions as CFDictionary,
             formatDescriptionOut: &format
         )
         guard status == noErr, let format else {
