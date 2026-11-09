@@ -227,32 +227,32 @@ private final class NativeCaptionSession: @unchecked Sendable {
     }
 
     /// Italic runs become `<i>`, which is what the cleaned ffmpeg SRT keeps.
-    /// The index is a UTF-16 offset, matching `fontStyle(at:range:)`.
+    /// `fontStyle(at:)` takes a `String.Index` and returns the style plus the run.
     private static func styledText(_ caption: AVCaption) -> String {
-        let raw = caption.text as NSString
-        guard raw.length > 0 else { return "" }
+        let text = caption.text
+        guard !text.isEmpty else { return "" }
         var result = ""
-        var location = 0
+        var index = text.startIndex
         var italicOpen = false
         var steps = 0
-        while location < raw.length && steps < raw.length + 2 {
+        let limit = text.count + 2
+        while index < text.endIndex && steps < limit {
             steps += 1
-            var range = NSRange(location: NSNotFound, length: 0)
-            let style = caption.fontStyle(at: location, range: &range)
-            let end: Int
-            if range.location != NSNotFound, range.length > 0, range.location <= location {
-                end = min(raw.length, range.location + range.length)
+            let (style, styleRange) = caption.fontStyle(at: index)
+            let end: String.Index
+            if styleRange.lowerBound <= index, styleRange.upperBound > index {
+                end = min(styleRange.upperBound, text.endIndex)
             } else {
-                end = min(raw.length, location + 1)
+                end = text.index(after: index)
             }
-            if end <= location { break }
+            if end <= index { break }
             let italic = style == .italic
             if italic != italicOpen {
                 result += italic ? "<i>" : "</i>"
                 italicOpen = italic
             }
-            result += raw.substring(with: NSRange(location: location, length: end - location))
-            location = end
+            result += text[index..<end]
+            index = end
         }
         if italicOpen {
             result += "</i>"
