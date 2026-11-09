@@ -37,5 +37,5 @@ Thanks for testing! This is an early build. Please try to break it and tell me w
 
 ## Known limits in this build
 - Not signed by Apple, so the Open Anyway step is needed once.
-- Text subtitles (tx3g) and discrete EIA-608 closed captions (`c608`, via ffmpeg). CEA-708 and captions that exist only in the video are skipped with a message. Image subtitles are skipped too.
+- Text subtitles (tx3g) and discrete EIA-608 closed captions (`c608`, via ffmpeg). The debug log also records a native caption-adaptor comparison; the .srt still comes from ffmpeg. CEA-708 and captions that exist only in the video are skipped with a message. Image subtitles are skipped too.
 - One file at a time. The full queue (parallel, track chips, conflict prompt) is not in this build yet. Settings still choose Skip, Overwrite, or Add a number.

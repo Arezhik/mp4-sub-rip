@@ -2,7 +2,8 @@ import Foundation
 
 // The extraction engine. Probe lists tracks. Extract writes SRT.
 // On macOS, `SubtitleEngine()` uses `RoutingSubtitleReader`: tx3g goes through
-// AVFoundation, and a discrete EIA-608 (`c608`) track goes through ffmpeg.
+// AVFoundation, and a discrete EIA-608 (`c608`) track is written by ffmpeg.
+// The caption adaptor is compared with that SRT and logged. It is not the writer.
 // CEA-708, captions that live only in the video bitstream, bitmap, and WebVTT
 // are reported and skipped.
 
@@ -10,7 +11,8 @@ import Foundation
 ///
 /// The app uses `SubtitleEngine()`, which picks the routing reader on macOS.
 /// Tests pass their own reader. A `c608` track is read by the reader the engine
-/// was given; the live reader sends that track to ffmpeg.
+/// was given; the live reader writes that track with ffmpeg and logs the
+/// caption-adaptor comparison.
 public protocol SubtitleMediaReading: Sendable {
     func inspect(file: URL) async throws -> MediaInspection
     /// Samples are visited in storage order. `onSampleTime` is the cue start
@@ -88,8 +90,9 @@ public struct SubtitleEngine: Sendable {
     private let reader: any SubtitleMediaReading
     private let storage: ExtractionStorage
 
-    /// AVFoundation for tx3g, ffmpeg for discrete `c608`, on macOS. On Linux,
-    /// probe and extract throw `SubtitleExtractionError.unsupportedPlatform`
+    /// AVFoundation for tx3g, ffmpeg for discrete `c608`, on macOS. The caption
+    /// adaptor is logged beside the ffmpeg extract and does not write the SRT.
+    /// On Linux, probe and extract throw `SubtitleExtractionError.unsupportedPlatform`
     /// so the pure pieces can still be tested.
     public init() {
         #if canImport(AVFoundation)

@@ -6,6 +6,10 @@ Every merged PR that changes the shipped app bumps the version in the same PR wi
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-09 (build 4)
+### Added
+- Discrete EIA-608 extracts still come from ffmpeg. The debug log also records an `AVAssetReaderOutputCaptionAdaptor` read of that `c608` track (group count, the first captions, and validation skips) and whether it matches the cleaned ffmpeg SRT. ffmpeg stays the writer (#28).
+
 ## [0.3.0] - 2026-11-09 (build 3)
 ### Added
 - Discrete EIA-608 closed captions (`c608`) are extracted to .srt with ffmpeg. CEA-708 and captions that live only in the video are still reported and skipped. A closed-caption file is skipped when ffmpeg is missing (#27).

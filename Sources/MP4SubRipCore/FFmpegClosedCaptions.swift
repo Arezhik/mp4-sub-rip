@@ -2,8 +2,9 @@ import Foundation
 
 // Discrete EIA-608 (`c608`) is extracted with ffmpeg's subtitle mapper.
 // `ffmpeg -map 0:s:N -c:s srt` is the path that worked on Arezhik's files.
-// CCExtractor and lavfi `movie=…[out0+subcc]` are not used. CEA-708 and
-// captions that live only in the video bitstream never reach this file.
+// The caption-adaptor spike compares against this cleaned SRT and does not
+// replace it. CCExtractor and lavfi `movie=…[out0+subcc]` are not used.
+// CEA-708 and captions that live only in the video bitstream never reach this file.
 
 struct FFmpegRunner: Sendable {
     var locate: @Sendable () -> String?

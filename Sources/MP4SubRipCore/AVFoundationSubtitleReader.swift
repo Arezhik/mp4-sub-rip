@@ -7,7 +7,8 @@ import Foundation
 // samples are the gaps between cues. This file is a separate implementation.
 //
 // Non-tx3g tracks are classified and returned; they are not read here.
-// Discrete `c608` is sent to ffmpeg by `RoutingSubtitleReader`.
+// Discrete `c608` is sent to ffmpeg by `RoutingSubtitleReader`. The caption
+// adaptor spike lives in `NativeClosedCaptionReader` and does not read tx3g.
 
 #if canImport(AVFoundation)
 import AVFoundation

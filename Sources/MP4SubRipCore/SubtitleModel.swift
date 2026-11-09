@@ -2,8 +2,9 @@ import Foundation
 
 // What the engine tells the rest of the app about one MP4.
 // tx3g (ffmpeg calls this mov_text) is read with AVFoundation. A discrete EIA-608
-// track (`c608`) is extracted with ffmpeg. CEA-708 (`c708`), captions that live
-// only in the video bitstream, bitmap, and WebVTT are reported and not extracted.
+// track (`c608`) is extracted with ffmpeg. The caption adaptor is only a logged
+// comparison. CEA-708 (`c708`), captions that live only in the video bitstream,
+// bitmap, and WebVTT are reported and not extracted.
 
 /// Why a subtitle track cannot be written to SRT.
 public enum SubtitleSkipReason: Equatable, Sendable {

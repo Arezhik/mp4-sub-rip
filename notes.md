@@ -23,6 +23,11 @@ Times in Mountain time (MT).
 - `c708` and captions that live only in the video bitstream are still reported and not extracted. No CCExtractor, no lavfi `subcc`, no `AVAssetReaderOutputCaptionAdaptor` (that is #28).
 - ffmpeg is located before `/Applications` is listed, and the launch log uses the same wording as the debug-log header. A missing ffmpeg skips the closed-caption file instead of writing a bad `.srt`.
 
+## 2026-11-09: Caption adaptor spike (issue #28)
+- `AVAssetReaderOutputCaptionAdaptor` is tried on a discrete `c608` track after ffmpeg writes the cleaned SRT. The debug log records the group count, the first five caption texts and times, validation skips, and the comparison.
+- ffmpeg stays the writer. The live Jeannie file is not in git, and this comparison was not run on it. Native is not the default.
+- No CEA-608 byte decoder. CEA-708 and in-bitstream captions stay report-only. `outputCaptionProvider` is not used.
+
 <!-- Template for each entry:
 ## YYYY-MM-DD ~H:MM PM MT: PR #N (what it does)
 - Agent: bc-…, branch cursor/…
