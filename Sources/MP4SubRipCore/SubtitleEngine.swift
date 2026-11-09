@@ -1,17 +1,16 @@
 import Foundation
 
 // The extraction engine. Probe lists tracks. Extract writes SRT.
-// AVFoundation is the reader on macOS (`AVFoundationSubtitleReader`). Bitmap,
-// closed captions, WebVTT-in-MP4, and any other non-tx3g codec are reported
-// and skipped. ffmpeg is not called: `SubtitleMediaReading` is the seam a
-// fallback reader can adopt if a real tx3g file ever fails in AVFoundation.
+// On macOS, `SubtitleEngine()` uses `RoutingSubtitleReader`: tx3g goes through
+// AVFoundation, and a discrete EIA-608 (`c608`) track goes through ffmpeg.
+// CEA-708, captions that live only in the video bitstream, bitmap, and WebVTT
+// are reported and skipped.
 
 /// Reads subtitle facts and samples out of one media file.
 ///
-/// The app uses `SubtitleEngine()`, which picks AVFoundation on macOS.
-/// A future ffmpeg reader would adopt this protocol and be passed to
-/// `SubtitleEngine(reader:)`. It should still only be asked for tx3g tracks;
-/// other kinds stay detect-and-report.
+/// The app uses `SubtitleEngine()`, which picks the routing reader on macOS.
+/// Tests pass their own reader. A `c608` track is read by the reader the engine
+/// was given; the live reader sends that track to ffmpeg.
 public protocol SubtitleMediaReading: Sendable {
     func inspect(file: URL) async throws -> MediaInspection
     /// Samples are visited in storage order. `onSampleTime` is the cue start
@@ -89,12 +88,12 @@ public struct SubtitleEngine: Sendable {
     private let reader: any SubtitleMediaReading
     private let storage: ExtractionStorage
 
-    /// AVFoundation on macOS. On Linux, probe and extract throw
-    /// `SubtitleExtractionError.unsupportedPlatform` so the pure pieces can
-    /// still be tested.
+    /// AVFoundation for tx3g, ffmpeg for discrete `c608`, on macOS. On Linux,
+    /// probe and extract throw `SubtitleExtractionError.unsupportedPlatform`
+    /// so the pure pieces can still be tested.
     public init() {
         #if canImport(AVFoundation)
-        self.init(reader: AVFoundationSubtitleReader(), storage: .live)
+        self.init(reader: RoutingSubtitleReader(), storage: .live)
         #else
         self.init(reader: UnavailableSubtitleReader(), storage: .live)
         #endif
@@ -147,7 +146,7 @@ public struct SubtitleEngine: Sendable {
         DebugLog.shared.record(.work, "Probe \(file.lastPathComponent): \(Self.summary(inspection.tracks))")
 
         let selected = try Self.select(inspection.tracks, ids: trackIDs)
-        let skipped = selected.compactMap { track -> SkippedSubtitle? in
+        var skipped = selected.compactMap { track -> SkippedSubtitle? in
             guard !track.isExtractable, let reason = track.skipReason else { return nil }
             return SkippedSubtitle(trackID: track.id, reason: reason)
         }
@@ -159,14 +158,23 @@ public struct SubtitleEngine: Sendable {
         var collected: [(track: SubtitleTrack, cues: [SubtitleCue])] = []
         for (index, track) in extractable.enumerated() {
             try Task.checkCancellation()
-            let cues = try await readCues(
-                file: file,
-                track: track,
-                duration: inspection.durationMilliseconds,
-                trackIndex: index,
-                trackCount: extractable.count,
-                progress: progress
-            )
+            let cues: [SubtitleCue]
+            do {
+                cues = try await readCues(
+                    file: file,
+                    track: track,
+                    duration: inspection.durationMilliseconds,
+                    trackIndex: index,
+                    trackCount: extractable.count,
+                    progress: progress
+                )
+            } catch let error as SubtitleExtractionError {
+                guard error == .needsFFmpeg else { throw error }
+                let skip = SkippedSubtitle(trackID: track.id, reason: .needsFFmpeg)
+                skipped.append(skip)
+                DebugLog.shared.record(.work, "Skipped track \(skip.trackID): \(skip.reason.message)", isWarning: true)
+                continue
+            }
             var track = track
             if !cues.isEmpty, cues.allSatisfy(\.isForced) {
                 track.isForced = true
@@ -352,7 +360,8 @@ public struct SubtitleEngine: Sendable {
         if tracks.isEmpty { return "no subtitle tracks" }
         return tracks.map { track in
             if track.isExtractable {
-                var label = "text \(track.languageCode)"
+                let kind = track.codec == FFmpegClosedCaptions.codec ? "closed captions" : "text"
+                var label = "\(kind) \(track.languageCode)"
                 if track.isForced { label += " forced" }
                 if track.isSDH { label += " sdh" }
                 return label

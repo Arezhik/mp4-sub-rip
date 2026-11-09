@@ -1,14 +1,16 @@
 import Foundation
 
 // What the engine tells the rest of the app about one MP4.
-// Text tracks are tx3g (ffmpeg calls this mov_text). Everything else is reported
-// with a typed reason and is not extracted. Bitmap OCR and CEA-608/708 are out of
-// scope; see issue #2.
+// tx3g (ffmpeg calls this mov_text) is read with AVFoundation. A discrete EIA-608
+// track (`c608`) is extracted with ffmpeg. CEA-708 (`c708`), captions that live
+// only in the video bitstream, bitmap, and WebVTT are reported and not extracted.
 
 /// Why a subtitle track cannot be written to SRT.
 public enum SubtitleSkipReason: Equatable, Sendable {
-    /// CEA-608, CEA-708, or another closed-caption track.
+    /// CEA-708, or captions that are not a discrete EIA-608 track.
     case closedCaption
+    /// The file has a discrete EIA-608 track, and ffmpeg is not installed.
+    case needsFFmpeg
     /// PGS, VobSub, or another image subtitle. This app does not OCR.
     case bitmap
     /// WebVTT stored inside the MP4 (`wvtt`), which is not tx3g.
@@ -21,6 +23,8 @@ public enum SubtitleSkipReason: Equatable, Sendable {
         switch self {
         case .closedCaption:
             return "Closed captions are not a text subtitle track."
+        case .needsFFmpeg:
+            return "Closed-caption extraction needs ffmpeg."
         case .bitmap:
             return "Image-based subtitles (needs OCR)."
         case .webVTT:
@@ -134,7 +138,9 @@ public enum TrackClassifier {
     /// these are the ones muxers actually write. Unknown codes stay "not text"
     /// rather than being called bitmap.
     static let bitmapCodecs: Set<String> = ["mp4s", "vobs", "pgs1", "pgss", "xsub", "dvbs"]
-    static let closedCaptionCodecs: Set<String> = ["c608", "c708", "atcc"]
+    /// Closed captions we recognize but do not extract. Discrete EIA-608
+    /// (`c608`) is extractable and is handled before this set is consulted.
+    static let closedCaptionCodecs: Set<String> = ["c708", "atcc"]
 
     public static func classify(_ discovered: DiscoveredMediaTrack) -> SubtitleTrack {
         let codec = normalizeCodec(discovered.codec)
@@ -155,6 +161,10 @@ public enum TrackClassifier {
 
         if codec == "tx3g" {
             kind = .text
+            extractable = true
+            reason = nil
+        } else if codec == "c608" {
+            kind = .closedCaption
             extractable = true
             reason = nil
         } else if discovered.mediaKind == .closedCaption || closedCaptionCodecs.contains(codec) {
@@ -198,7 +208,8 @@ public enum TrackClassifier {
         for item in discovered {
             let track = classify(item)
             if let existing = byID[track.id] {
-                if !existing.isExtractable && track.isExtractable {
+                let textWins = track.codec == "tx3g" && existing.codec != "tx3g"
+                if textWins || (!existing.isExtractable && track.isExtractable) {
                     byID[track.id] = track
                 }
                 continue
@@ -273,6 +284,7 @@ public enum SubtitleExtractionError: Error, Equatable, LocalizedError, Sendable 
     case outputNotWritable
     case malformedSample
     case unsupportedPlatform
+    case needsFFmpeg
     case unreadable(String)
 
     public var errorDescription: String? {
@@ -287,6 +299,8 @@ public enum SubtitleExtractionError: Error, Equatable, LocalizedError, Sendable 
             return "A subtitle sample could not be read."
         case .unsupportedPlatform:
             return "Extracting subtitles needs macOS."
+        case .needsFFmpeg:
+            return SubtitleSkipReason.needsFFmpeg.message
         case .unreadable(let message):
             return message
         }

@@ -6,8 +6,8 @@ import Foundation
 // nil output settings, so the stored samples come back unchanged, and empty
 // samples are the gaps between cues. This file is a separate implementation.
 //
-// Non-tx3g tracks are classified and returned; they are not read.
-// ffmpeg is intentionally not wired in. SubtitleMediaReading is the seam.
+// Non-tx3g tracks are classified and returned; they are not read here.
+// Discrete `c608` is sent to ffmpeg by `RoutingSubtitleReader`.
 
 #if canImport(AVFoundation)
 import AVFoundation

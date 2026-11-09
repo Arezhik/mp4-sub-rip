@@ -11,7 +11,7 @@ Drop an MP4 on the window and it writes the embedded text subtitles out as .srt 
 - **Help → Export Debug Log…** saves a log to the Desktop to send with a bug report.
 
 ## Subtitles it reads
-Text tracks stored as tx3g (what ffmpeg calls `mov_text` when an SRT is muxed into an MP4). One track becomes `Movie.srt`. Several languages become `Movie.eng.srt`, `Movie.spa.srt`, and a forced track is marked `Movie.eng.forced.srt`. Bitmap subtitles, closed captions, and DRM-protected files are reported and skipped. ffmpeg is not used. The app still notes in the debug log whether ffmpeg is installed, so a later fallback has a place to start.
+Text tracks stored as tx3g (what ffmpeg calls `mov_text` when an SRT is muxed into an MP4), and discrete EIA-608 closed captions (`c608`). One track becomes `Movie.srt`. Several languages become `Movie.eng.srt`, `Movie.spa.srt`, and a forced track is marked `Movie.eng.forced.srt`. EIA-608 is read with ffmpeg (`-map 0:s:N -c:s srt`); the debug log records ffmpeg's path and version. CEA-708, captions that exist only inside the video, bitmap subtitles, and DRM-protected files are reported and skipped. A closed-caption file is skipped, not crashed, when ffmpeg is missing.
 
 ## Open it in Xcode and press Run
 1. Quit Xcode. In the repository folder, delete `.build` if you see one, then run `rm -rf ~/Library/Developer/Xcode/DerivedData/MP4SubRip-*`.

@@ -43,7 +43,9 @@ final class AppModel: ObservableObject {
         if !pending.isEmpty {
             importURLs(pending)
         }
-        logToolDetection()
+        if AppDelegate.isFinishedLaunching {
+            logInstalledTools()
+        }
     }
 
     // MARK: Adding files
@@ -326,17 +328,19 @@ final class AppModel: ObservableObject {
         DebugLog.shared.record(.lifecycle, "Settings \(SettingsSummary.current())")
     }
 
-    private func logToolDetection() {
-        Task.detached {
-            let spec = ExternalToolSpec.primary
-            if let tools = ExternalTool.locate(spec) {
-                let first = spec.executables.first ?? spec.name
-                let version = tools[first].flatMap { ExternalTool.version(of: $0, arguments: spec.versionArguments) } ?? "unknown"
-                let paths = spec.executables.compactMap { tools[$0] }.joined(separator: ", ")
-                DebugLog.shared.record(.tool, "\(spec.name) found \(paths), version \(version)")
-            } else {
-                DebugLog.shared.record(.tool, "\(spec.name) not found", isError: true)
-            }
+    private var didLogTools = false
+
+    /// Launch log. Uses the same `ExternalTool.describe` result shape as the
+    /// exported header (`ToolDetection`), and runs only after AppKit has finished
+    /// launching. Safe to call from both sides of that race; it records once.
+    func logInstalledTools() {
+        guard !didLogTools else { return }
+        didLogTools = true
+        let spec = ExternalToolSpec.primary
+        Task.detached(priority: .userInitiated) {
+            let located = ExternalTool.describe(spec)
+            let line = ToolDetection.logLine(spec: spec, located: located)
+            DebugLog.shared.record(.tool, line.message, isError: line.isError)
         }
     }
 }

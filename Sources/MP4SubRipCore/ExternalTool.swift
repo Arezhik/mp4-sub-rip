@@ -74,15 +74,102 @@ public enum ToolFailure: Error, Equatable, LocalizedError {
     }
 }
 
+/// Path and version from one lookup. The launch line and the debug-log header
+/// both print this, so they can't describe two different results.
+public struct LocatedTool: Equatable, Sendable {
+    public var name: String
+    public var path: String
+    public var version: String
+
+    public init(name: String, path: String, version: String) {
+        self.name = name
+        self.path = path
+        self.version = version
+    }
+}
+
+/// Wording shared by the launch log and the exported debug-log header.
+public enum ToolDetection {
+    public struct Line: Equatable, Sendable {
+        public var message: String
+        public var isError: Bool
+
+        public init(message: String, isError: Bool) {
+            self.message = message
+            self.isError = isError
+        }
+    }
+
+    public static func logLine(spec: ExternalToolSpec, located: LocatedTool?) -> Line {
+        guard let located else {
+            return Line(message: "\(spec.name) not found", isError: true)
+        }
+        return Line(
+            message: "\(located.name) found \(located.path), version \(located.version)",
+            isError: false
+        )
+    }
+
+    public static func facts(spec: ExternalToolSpec, located: LocatedTool?) -> [DebugFact] {
+        [
+            DebugFact(spec.name, located?.path ?? "not found"),
+            DebugFact("\(spec.name) version", located?.version ?? "not found")
+        ]
+    }
+}
+
 public enum ExternalTool {
+    /// Locates the tool and reads its version. Nil when the executable is missing.
+    public static func describe(_ spec: ExternalToolSpec = .primary) -> LocatedTool? {
+        guard let paths = locate(spec) else { return nil }
+        let executable = spec.executables.first ?? spec.name
+        guard let path = paths[executable] else { return nil }
+        let version = version(of: path, arguments: spec.versionArguments) ?? "unknown"
+        return LocatedTool(name: spec.name, path: path, version: version)
+    }
+
     public static func locate(_ spec: ExternalToolSpec = .primary) -> ExternalToolPaths? {
-        let names = (try? FileManager.default.contentsOfDirectory(atPath: "/Applications")) ?? []
-        return locate(
+        locateInstalled(
             spec,
-            executableExists: { FileManager.default.isExecutableFile(atPath: $0) },
-            applications: names,
+            executableExists: isRunnable,
+            applicationNames: {
+                (try? FileManager.default.contentsOfDirectory(atPath: "/Applications")) ?? []
+            },
             searchPath: ProcessInfo.processInfo.environment["PATH"] ?? ""
         )
+    }
+
+    /// Homebrew and `/usr/local/bin` are checked before `/Applications` is
+    /// listed. A hit there returns immediately. Launch on 2026-11-09 logged
+    /// ffmpeg missing while the same run's header found `/opt/homebrew/bin/ffmpeg`;
+    /// that check used `isExecutableFile` only, after listing `/Applications`.
+    /// `access(X_OK)` counts too, including for a relative symlink.
+    static func locateInstalled(
+        _ spec: ExternalToolSpec,
+        executableExists: (String) -> Bool,
+        applicationNames: () -> [String],
+        searchPath: String
+    ) -> ExternalToolPaths? {
+        if let found = locate(spec, executableExists: executableExists, applications: [], searchPath: "") {
+            return found
+        }
+        return locate(
+            spec,
+            executableExists: executableExists,
+            applications: applicationNames(),
+            searchPath: searchPath
+        )
+    }
+
+    /// A regular file, or a symlink to one, that can be executed. Directories
+    /// are rejected even when they are searchable. `access` follows a relative
+    /// symlink (Homebrew's layout) from the link's own directory.
+    static func isRunnable(_ path: String) -> Bool {
+        var isDirectory: ObjCBool = false
+        let exists = FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
+        if exists && isDirectory.boolValue { return false }
+        if access(path, X_OK) == 0 { return true }
+        return FileManager.default.isExecutableFile(atPath: path)
     }
 
     /// `applications` is the names inside `/Applications`, such as `MKVToolNix.app`.

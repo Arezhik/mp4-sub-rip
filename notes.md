@@ -17,6 +17,12 @@ Times in Mountain time (MT).
 - Naming follows design spec §5. One extractable track is `Movie.srt`. Forced is marked when the track name, the all-samples display flag (`0x80000000`), or every cue's `frcd` atom says so.
 - Bold, italic, and underline from tx3g `styl` records (and the sample description's default face) become `<b>`, `<i>`, and `<u>`.
 
+## 2026-11-09: EIA-608 closed captions (issue #27)
+- Discrete `c608` tracks are extractable and go through ffmpeg `-map 0:s:N -c:s srt`. tx3g stays on AVFoundation.
+- ffmpeg's SRT is cleaned of `{\an7}`, `<font>` / `</font>`, and `\h`. Real `<i>` stays.
+- `c708` and captions that live only in the video bitstream are still reported and not extracted. No CCExtractor, no lavfi `subcc`, no `AVAssetReaderOutputCaptionAdaptor` (that is #28).
+- ffmpeg is located before `/Applications` is listed, and the launch log uses the same wording as the debug-log header. A missing ffmpeg skips the closed-caption file instead of writing a bad `.srt`.
+
 <!-- Template for each entry:
 ## YYYY-MM-DD ~H:MM PM MT: PR #N (what it does)
 - Agent: bc-…, branch cursor/…
