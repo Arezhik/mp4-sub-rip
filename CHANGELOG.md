@@ -6,6 +6,10 @@ Every merged PR that changes the shipped app bumps the version in the same PR wi
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-09 (build 4)
+### Added
+- The app icon is the Page design: a light silver rounded body, a blue play tile, and subtitle pages. Small sizes drop the back page (#31).
+
 ## [0.3.0] - 2026-11-09 (build 3)
 ### Added
 - Discrete EIA-608 closed captions (`c608`) are extracted to .srt with ffmpeg. CEA-708 and captions that live only in the video are still reported and skipped. A closed-caption file is skipped when ffmpeg is missing (#27).
