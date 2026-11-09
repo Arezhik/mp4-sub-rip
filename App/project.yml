@@ -36,6 +36,8 @@ targets:
         includes:
           - "*.swift"
           - Info.plist
+      - path: Assets.xcassets
+        buildPhase: resources
     # App Sandbox stays off. A sandboxed app can read a dropped file but cannot
     # create a new file next to it, and ad-hoc "Sign to Run Locally" has no
     # provisioning profile for a sandbox entitlement.
@@ -49,10 +51,11 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         # Document types (input files and folders) live in Info.plist.
         INFOPLIST_FILE: Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         # Version: change with scripts/bump-version.sh only, so this file and the
         # .xcodeproj stay in sync. MARKETING_VERSION is what users see (MAJOR.MINOR.PATCH).
-        MARKETING_VERSION: "0.3.0"
-        CURRENT_PROJECT_VERSION: "3"
+        MARKETING_VERSION: "0.4.0"
+        CURRENT_PROJECT_VERSION: "4"
         CODE_SIGN_STYLE: Manual
         CODE_SIGN_IDENTITY: "-"
         CODE_SIGNING_REQUIRED: NO
