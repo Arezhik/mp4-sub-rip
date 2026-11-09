@@ -92,7 +92,7 @@ final class SubtitleEngineTests: XCTestCase {
         var caption = text(1, "eng")
         caption.isExtractable = false
         caption.kind = .closedCaption
-        caption.codec = "c608"
+        caption.codec = "c708"
         caption.skipReason = .closedCaption
         let outcome = try await SubtitleEngine(reader: scripted(tracks: [caption], cues: [:]))
             .extract(file: movie)
@@ -250,6 +250,61 @@ final class SubtitleEngineTests: XCTestCase {
         #endif
     }
 
+    func testMissingFFmpegSkipsTheClosedCaptionAndWritesNothing() async throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let movie = try touchMovie(in: directory, name: "Movie.mp4")
+        var caption = text(1, "eng")
+        caption.kind = .closedCaption
+        caption.codec = "c608"
+        let outcome = try await SubtitleEngine(reader: scripted(
+            tracks: [caption],
+            cues: [:],
+            failureOnTrack: 1,
+            failure: .needsFFmpeg
+        )).extract(file: movie, conflict: .overwrite)
+        XCTAssertTrue(outcome.written.isEmpty)
+        XCTAssertEqual(outcome.skipped.map(\.reason), [.needsFFmpeg])
+        XCTAssertEqual(outcome.skipped.first?.reason.message, "Closed-caption extraction needs ffmpeg.")
+        let names = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+        XCTAssertEqual(names, ["Movie.mp4"])
+    }
+
+    func testTextTrackStillWritesWhenClosedCaptionsNeedFFmpeg() async throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let movie = try touchMovie(in: directory, name: "Movie.mp4")
+        var caption = text(2, "eng")
+        caption.kind = .closedCaption
+        caption.codec = "c608"
+        let outcome = try await SubtitleEngine(reader: scripted(
+            tracks: [text(1, "eng"), caption],
+            cues: [1: [cue("Hello", start: 0, end: 1000)]],
+            failureOnTrack: 2,
+            failure: .needsFFmpeg
+        )).extract(file: movie, conflict: .overwrite)
+        XCTAssertEqual(outcome.written.map { URL(fileURLWithPath: $0.path).lastPathComponent }, ["Movie.srt"])
+        XCTAssertEqual(outcome.skipped.map(\.reason), [.needsFFmpeg])
+        let body = try String(contentsOf: URL(fileURLWithPath: outcome.written[0].path), encoding: .utf8)
+        XCTAssertTrue(body.contains("Hello"))
+    }
+
+    func testClosedCaptionCuesUseTheSameNamingAsText() async throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let movie = try touchMovie(in: directory, name: "Movie.mp4")
+        var caption = text(1, "eng")
+        caption.kind = .closedCaption
+        caption.codec = "c608"
+        let outcome = try await SubtitleEngine(reader: scripted(
+            tracks: [caption],
+            cues: [1: [cue("Hello there", start: 1701, end: 4000)]]
+        )).extract(file: movie, conflict: .overwrite)
+        XCTAssertEqual(outcome.written.map { URL(fileURLWithPath: $0.path).lastPathComponent }, ["Movie.srt"])
+        let body = try String(contentsOf: URL(fileURLWithPath: outcome.written[0].path), encoding: .utf8)
+        XCTAssertEqual(body, "1\n00:00:01,701 --> 00:00:04,000\nHello there\n")
+    }
+
     func testChosenTrackThatIsMissingThrows() async throws {
         let directory = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -268,13 +323,15 @@ final class SubtitleEngineTests: XCTestCase {
         cues: [Int: [SubtitleCue]],
         duration: Int = 0,
         sampleTimes: [Int: [Int]] = [:],
-        failureOnTrack: Int? = nil
+        failureOnTrack: Int? = nil,
+        failure: SubtitleExtractionError? = nil
     ) -> ScriptedReader {
         ScriptedReader(
             inspection: MediaInspection(tracks: tracks, durationMilliseconds: duration),
             cuesByTrack: cues,
             sampleTimes: sampleTimes,
-            failureOnTrack: failureOnTrack
+            failureOnTrack: failureOnTrack,
+            failure: failure
         )
     }
 
@@ -311,6 +368,7 @@ private struct ScriptedReader: SubtitleMediaReading {
     var cuesByTrack: [Int: [SubtitleCue]]
     var sampleTimes: [Int: [Int]]
     var failureOnTrack: Int?
+    var failure: SubtitleExtractionError?
 
     func inspect(file: URL) async throws -> MediaInspection { inspection }
 
@@ -322,10 +380,11 @@ private struct ScriptedReader: SubtitleMediaReading {
         let cues = cuesByTrack[trackID] ?? []
         let times = sampleTimes[trackID] ?? []
         let fail = failureOnTrack == trackID
+        let thrown = failure
         return AsyncThrowingStream { continuation in
             for time in times { onSampleTime(time) }
             if fail {
-                continuation.finish(throwing: SubtitleExtractionError.malformedSample)
+                continuation.finish(throwing: thrown ?? SubtitleExtractionError.malformedSample)
                 return
             }
             for cue in cues { continuation.yield(cue) }

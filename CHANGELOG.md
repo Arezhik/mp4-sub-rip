@@ -6,6 +6,10 @@ Every merged PR that changes the shipped app bumps the version in the same PR wi
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-09 (build 3)
+### Added
+- Discrete EIA-608 closed captions (`c608`) are extracted to .srt with ffmpeg. CEA-708 and captions that live only in the video are still reported and skipped. A closed-caption file is skipped when ffmpeg is missing (#27).
+
 ## [0.2.0] - 2026-11-06 (build 2)
 ### Added
 - Dropping an MP4 extracts its text subtitles (tx3g) to .srt. One track is `Movie.srt`; several languages are `Movie.eng.srt`, and a forced track is marked. Bitmap subtitles, closed captions, and DRM-protected files are reported and skipped (#2).

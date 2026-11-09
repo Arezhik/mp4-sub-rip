@@ -39,13 +39,8 @@ enum DebugMachine {
     static func environment(settings: String) -> DebugEnvironment {
         let architecture = processArchitecture
         let rosetta = runningUnderRosetta
-        var facts: [DebugFact] = []
         let spec = ExternalToolSpec.primary
-        let tools = ExternalTool.locate(spec)
-        let first = spec.executables.first ?? spec.name
-        let path = tools?[first]
-        facts.append(DebugFact(spec.name, path ?? "not found"))
-        facts.append(DebugFact("\(spec.name) version", path.flatMap { ExternalTool.version(of: $0, arguments: spec.versionArguments) } ?? "not found"))
+        let facts = ToolDetection.facts(spec: spec, located: ExternalTool.describe(spec))
         return DebugEnvironment(
             appVersion: AppVersion.marketing,
             appBuild: AppVersion.build,

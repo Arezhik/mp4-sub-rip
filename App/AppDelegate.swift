@@ -34,6 +34,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private static let inbox = Inbox()
 
+    /// Set once `applicationDidFinishLaunching` has run. Tool detection waits
+    /// for this: a check started inside `AppModel.init` reported ffmpeg missing
+    /// on 2026-11-09 while the later debug-log header found it.
+    private(set) static var isFinishedLaunching = false
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        Self.isFinishedLaunching = true
+        AppModel.shared?.logInstalledTools()
+    }
+
     /// Asks before quitting in the middle of a run.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let model = AppModel.shared, model.commands.flags.hasActiveWork else { return .terminateNow }
