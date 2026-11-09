@@ -10,8 +10,9 @@ One or two sentences: who it's for and what it does.
 - Bundle ID: `com.arezhik.MP4SubRip` (don't change it after testers install the app).
 - Input: .mp4 files and folders, from the window, Open…, the Dock, and Open With.
 - Output: next to the input by default, or a chosen folder. Not sandboxed.
-- Existing output file: <Skip / Overwrite / Add a number>. Ask once per batch with "Apply to all", never mid-batch per file.
-- External tools: <none / name, minimum and maximum tested versions>.
+- Existing output file: Skip (default), Overwrite, or Add a number, from Settings. The engine applies that choice. Asking once per batch with "Apply to all" is still queue UI.
+- External tools: none for extraction. AVFoundation reads tx3g. ffmpeg is located and logged at launch, and `SubtitleMediaReading` is the seam for a fallback, but it is not called.
+- Subtitles: text tracks only (`tx3g` / mov_text). Bitmap, closed captions, WebVTT-in-MP4, DRM, and any other codec are reported with a typed reason and not extracted.
 - Design source: <Design Bot spec and mockups path>.
 
 ## Architecture
@@ -20,7 +21,7 @@ One or two sentences: who it's for and what it does.
 - Engine rules: check `Task.checkCancellation()` in every long loop, delete half-written output on cancel, and report progress through `AppModel.report` (throttled to about 10 updates a second).
 
 ## Phase 1 scope (the smallest version that's useful)
-1. …
+1. Extract embedded tx3g text tracks from an MP4 to .srt (issue #2). Dropping a file on the window runs it, one file at a time.
 2. …
 
 ### Definition of done for Phase 1

@@ -28,6 +28,7 @@ final class AppModel: ObservableObject {
     static weak var shared: AppModel?
 
     private var throttles: [UUID: ProgressThrottle] = [:]
+    private var tasks: [UUID: Task<Void, Never>] = [:]
 
     init() {
         DebugLog.shared.configure(directory: DebugLog.libraryLogsDirectory, mirror: { AppLog.write($0) })
@@ -64,8 +65,8 @@ final class AppModel: ObservableObject {
         }
         DebugLog.shared.record(.queue, "Added \(added) of \(paths.count) dropped or opened items")
         commands.update(from: items)
-        // TODO(engine): start the next waiting item. One file at a time first; add
-        // parallel mode later, and keep progress throttled when you do.
+        // One file at a time. Parallel mode is later queue work.
+        startNextIfIdle()
     }
 
     func showOpenPanel() {
@@ -82,6 +83,122 @@ final class AppModel: ObservableObject {
         panel.allowedContentTypes = types
         guard panel.runModal() == .OK else { return }
         importURLs(panel.urls)
+    }
+
+    // MARK: Extraction
+
+    /// Starts the next waiting row when nothing is running.
+    private func startNextIfIdle() {
+        guard tasks.isEmpty else { return }
+        while let next = items.first(where: { $0.status == .waiting }) {
+            if beginExtraction(next) { return }
+        }
+    }
+
+    /// False means the row was failed immediately, so the caller should try the next one.
+    private func beginExtraction(_ item: QueueItem) -> Bool {
+        let request = Self.extractionRequest()
+        if request.missingFolder {
+            report(.failed(reason: "Choose an output folder in Settings."), for: item.id)
+            return false
+        }
+        let id = item.id
+        let path = item.path
+        report(.working(completed: 0, total: 0), for: id)
+        let task = Task.detached {
+            let finish = await Self.runExtraction(id: id, path: path, request: request)
+            await MainActor.run {
+                AppModel.shared?.complete(id: id, finish: finish)
+            }
+        }
+        tasks[id] = task
+        return true
+    }
+
+    private nonisolated static func runExtraction(id: UUID, path: String, request: ExtractionRequest) async -> ExtractionFinish {
+        do {
+            let outcome = try await SubtitleEngine().extract(
+                file: URL(fileURLWithPath: path),
+                outputDirectory: request.directory,
+                conflict: request.conflict,
+                progress: { completed, total in
+                    Task { @MainActor in
+                        guard let model = AppModel.shared,
+                              let current = model.items.first(where: { $0.id == id }),
+                              current.status.isActive else { return }
+                        model.report(.working(completed: completed, total: total), for: id)
+                    }
+                }
+            )
+            return .success(outcome)
+        } catch is CancellationError {
+            return .cancelled
+        } catch {
+            let message = (error as? LocalizedError)?.errorDescription?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return .failed((message?.isEmpty == false ? message : nil) ?? "Could not extract subtitles.")
+        }
+    }
+
+    private func complete(id: UUID, finish: ExtractionFinish) {
+        tasks[id] = nil
+        defer { startNextIfIdle() }
+        guard let item = items.first(where: { $0.id == id }), item.status.isActive else { return }
+        switch finish {
+        case .cancelled:
+            report(.canceled, for: id)
+        case let .failed(message):
+            report(.failed(reason: message), for: id)
+        case let .success(outcome):
+            if outcome.written.count > 1 {
+                let names = outcome.written.map { URL(fileURLWithPath: $0.path).lastPathComponent }
+                DebugLog.shared.record(.work, "Saved \(names.joined(separator: ", "))")
+            }
+            if let first = outcome.written.first {
+                report(.done(outputPath: first.path), for: id)
+            } else {
+                report(.skipped(reason: skipReason(outcome)), for: id)
+            }
+        }
+    }
+
+    private func skipReason(_ outcome: ExtractionOutcome) -> String {
+        var parts: [String] = []
+        if !outcome.alreadyExists.isEmpty {
+            parts.append("already exists")
+        }
+        var seen: Set<String> = []
+        for skip in outcome.skipped where seen.insert(skip.reason.message).inserted {
+            parts.append(skip.reason.message)
+        }
+        if parts.isEmpty { return "No text subtitles" }
+        return parts.joined(separator: " ")
+    }
+
+    private static func extractionRequest() -> ExtractionRequest {
+        let defaults = UserDefaults.standard
+        let placement = defaults.string(forKey: SettingsKey.placement) ?? SettingsKey.placementNextToSource
+        let existing = defaults.string(forKey: SettingsKey.existingFile) ?? ExistingFileChoice.skip.rawValue
+        let conflict: OutputConflictPolicy
+        switch existing {
+        case ExistingFileChoice.overwrite.rawValue:
+            conflict = .overwrite
+        case ExistingFileChoice.addNumber.rawValue:
+            conflict = .keepBoth
+        default:
+            conflict = .skip
+        }
+        guard placement == SettingsKey.placementFolder else {
+            return ExtractionRequest(directory: nil, conflict: conflict, missingFolder: false)
+        }
+        let path = defaults.string(forKey: SettingsKey.folder) ?? ""
+        if path.isEmpty {
+            return ExtractionRequest(directory: nil, conflict: conflict, missingFolder: true)
+        }
+        return ExtractionRequest(
+            directory: URL(fileURLWithPath: path, isDirectory: true),
+            conflict: conflict,
+            missingFolder: false
+        )
     }
 
     // MARK: Progress from the engine
@@ -124,9 +241,9 @@ final class AppModel: ObservableObject {
     // MARK: Queue actions
 
     func cancel(id: UUID) {
-        // TODO(engine): cancel the running Task for this row. The engine must call
-        // Task.checkCancellation() inside every long loop, including reading and
-        // decoding (PGS2SRT #6), and delete a half-written output file.
+        // The engine checks cancellation while it reads and deletes a half-written SRT.
+        // The row is marked here; `complete` will not overwrite a row that already stopped.
+        tasks[id]?.cancel()
         guard let index = items.firstIndex(where: { $0.id == id }), items[index].status.isActive else { return }
         report(.canceled, for: id)
     }
@@ -222,4 +339,20 @@ final class AppModel: ObservableObject {
             }
         }
     }
+}
+
+/// Snapshot of the output settings taken when a row starts, so a change mid-file
+/// doesn't move the file it's already writing.
+private struct ExtractionRequest: Sendable {
+    var directory: URL?
+    var conflict: OutputConflictPolicy
+    var missingFolder: Bool
+}
+
+/// The bit of an extraction result that can cross back to the main actor.
+/// `Error` itself is not Sendable.
+private enum ExtractionFinish: Sendable {
+    case success(ExtractionOutcome)
+    case cancelled
+    case failed(String)
 }

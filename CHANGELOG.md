@@ -6,6 +6,10 @@ Every merged PR that changes the shipped app bumps the version in the same PR wi
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-06 (build 2)
+### Added
+- Dropping an MP4 extracts its text subtitles (tx3g) to .srt. One track is `Movie.srt`; several languages are `Movie.eng.srt`, and a forced track is marked. Bitmap subtitles, closed captions, and DRM-protected files are reported and skipped (#2).
+
 ## [0.1.0] - 2026-11-04 (build 1)
 ### Added
 - Project created with new-mac-app.sh: queue window with drag and drop, Settings, and Help > Export Debug Log.
