@@ -41,9 +41,10 @@ enum FFmpegClosedCaptions {
         ]
     }
 
-    /// Writes ffmpeg's SRT to a temporary file, cleans it, and returns cues.
-    /// The temporary file is removed on success, failure, and cancel. The
-    /// engine writes the final SRT, so naming and conflict handling stay there.
+    /// Writes ffmpeg's SRT to a temporary file, cleans it, flattens overlap,
+    /// and returns cues. The temporary file is removed on success, failure,
+    /// and cancel. The engine writes the final SRT, so naming and conflict
+    /// handling stay there.
     static func extract(
         file: URL,
         subtitleIndex: Int,
@@ -76,7 +77,10 @@ enum FFmpegClosedCaptions {
         guard let text = String(data: data, encoding: .utf8) else {
             throw SubtitleExtractionError.unreadable("ffmpeg wrote subtitles that are not UTF-8.")
         }
-        let cues = try SRTDocument.parse(ClosedCaptionText.clean(text))
+        let parsed = try SRTDocument.parse(ClosedCaptionText.clean(text))
+        // Movie length stays nil. `RoutingSubtitleReader` already has it, and
+        // passing it in needs a new argument here, which is more than one line.
+        let cues = try ClosedCaptionTiming.tidy(parsed)
         for cue in cues {
             try Task.checkCancellation()
             onSampleTime(cue.startMilliseconds)

@@ -6,6 +6,10 @@ Every merged PR that changes the shipped app bumps the version in the same PR wi
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-10 (build 5)
+### Fixed
+- ffmpeg SRT cues that packed several captions together break onto their own lines, overlapping captions share one timeline, and a last cue shorter than one second stays up a little longer (#32).
+
 ## [0.4.0] - 2026-11-09 (build 4)
 ### Added
 - The app icon is the Page design: a light silver rounded body, a blue play tile, and subtitle pages. Small sizes drop the back page (#31).

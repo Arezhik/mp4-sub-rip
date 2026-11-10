@@ -11,7 +11,7 @@ One or two sentences: who it's for and what it does.
 - Input: .mp4 files and folders, from the window, Open…, the Dock, and Open With.
 - Output: next to the input by default, or a chosen folder. Not sandboxed.
 - Existing output file: Skip (default), Overwrite, or Add a number, from Settings. The engine applies that choice. Asking once per batch with "Apply to all" is still queue UI.
-- External tools: ffmpeg for discrete EIA-608 (`c608`) only. AVFoundation reads tx3g. ffmpeg is located (Homebrew, then `/usr/local/bin`, then an app bundle, then `PATH`) and its path and version are logged at launch. `SubtitleMediaReading` routes `c608` to `ffmpeg -map 0:s:N -c:s srt`.
+- External tools: ffmpeg for discrete EIA-608 (`c608`) only. AVFoundation reads tx3g. ffmpeg is located (Homebrew, then `/usr/local/bin`, then an app bundle, then `PATH`) and its path and version are logged at launch. `SubtitleMediaReading` routes `c608` to `ffmpeg -map 0:s:N -c:s srt`. The first `{\anN}` in a cue is removed, a later one becomes a line break, overlapping cues are flattened onto one timeline, and a last cue under one second is lengthened.
 - Subtitles: tx3g / mov_text, and discrete EIA-608 (`c608`). CEA-708 (`c708`), captions that exist only in the video bitstream, bitmap, WebVTT-in-MP4, DRM, and any other codec are reported with a typed reason and not extracted.
 - Design source: <Design Bot spec and mockups path>.
 
