@@ -8,7 +8,7 @@ One or two sentences: who it's for and what it does.
 ## Decisions
 - Platform: macOS 14.0+, universal (arm64 + x86_64), SwiftUI, unsigned CI build.
 - Bundle ID: `com.arezhik.MP4SubRip` (don't change it after testers install the app).
-- Input: .mp4 files and folders, from the window, Open…, the Dock, and Open With.
+- Input: .mp4 files and folders, from the window, Add Files (⌘O), the Dock, and Open With. Adding a file queues it. Extract Subtitles runs the queue.
 - Output: next to the input by default, or a chosen folder. Not sandboxed.
 - Existing output file: Skip (default), Overwrite, or Add a number, from Settings. The engine applies that choice. Asking once per batch with "Apply to all" is still queue UI.
 - External tools: ffmpeg for discrete EIA-608 (`c608`) only. AVFoundation reads tx3g. ffmpeg is located (Homebrew, then `/usr/local/bin`, then an app bundle, then `PATH`) and its path and version are logged at launch. `SubtitleMediaReading` routes `c608` to `ffmpeg -map 0:s:N -c:s srt`. The first `{\anN}` in a cue is removed, a later one becomes a line break, overlapping cues are flattened onto one timeline, and a last cue under one second is lengthened.
@@ -21,7 +21,7 @@ One or two sentences: who it's for and what it does.
 - Engine rules: check `Task.checkCancellation()` in every long loop, delete half-written output on cancel, and report progress through `AppModel.report` (throttled to about 10 updates a second).
 
 ## Phase 1 scope (the smallest version that's useful)
-1. Extract embedded tx3g text tracks from an MP4 to .srt (issue #2). Dropping a file on the window runs it, one file at a time.
+1. Extract embedded tx3g text tracks from an MP4 to .srt (issue #2). Adding a file queues it. Extract Subtitles runs the queue, one file at a time. Stop sends the in-flight row back to Pending and deletes a half-written .srt.
 2. Extract discrete EIA-608 (`c608`) closed captions with ffmpeg (issue #27).
 
 ### Definition of done for Phase 1

@@ -1,12 +1,12 @@
 # MP4SubRip
 
 A native macOS app (SwiftUI, macOS 14.0 or later, universal for Apple silicon and Intel).
-Drop an MP4 on the window and it writes the embedded text subtitles out as .srt files.
+Add an MP4, then click Extract Subtitles. The app writes the embedded text subtitles out as .srt files.
 
 ## Use the window
-- Drop files or a folder on the window, or choose **Open…** (⌘O).
+- Drop files or a folder on the window, or choose **Add Files** (⌘O). Nothing starts until you click **Extract Subtitles** (⌘↩).
 - Drop them on the Dock icon, or right-click a file in Finder and choose **Open With → MP4SubRip**. Files go into the window that's already open.
-- **Cancel All** (⌘.) stops everything that's running. **Clear Finished** (⌘⌫) removes finished rows from the list; it never deletes files.
+- **Stop** (⌘.) cancels the file that is extracting and leaves that row Pending. **Cancel All** stops the run the same way. **Clear Finished** (⌘⌫) removes finished rows from the list; it never deletes files.
 - **Settings** (⌘,) holds the output options.
 - **Help → Export Debug Log…** saves a log to the Desktop to send with a bug report.
 

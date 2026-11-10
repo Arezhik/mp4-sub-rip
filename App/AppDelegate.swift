@@ -46,7 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Asks before quitting in the middle of a run.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard let model = AppModel.shared, model.commands.flags.hasActiveWork else { return .terminateNow }
+        guard let model = AppModel.shared, model.commands.flags.isRunning else { return .terminateNow }
         let alert = NSAlert()
         alert.messageText = "Stop the files that are still running and quit?"
         alert.informativeText = "Files that have not finished will need to be added again."

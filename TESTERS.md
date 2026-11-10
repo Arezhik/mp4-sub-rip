@@ -15,15 +15,15 @@ Thanks for testing! This is an early build. Please try to break it and tell me w
    `xattr -dr com.apple.quarantine /Applications/MP4SubRip.app`
 
 ## 2. Basic use
-1. Drag a file onto the window. Watch its row move from Waiting to working to Done.
-2. Click **Reveal in Finder** and check the output file.
+1. Drag a file onto the window. It stays Pending until you click **Extract Subtitles**.
+2. Watch the row move from Pending to Extracting to Done. Click **Reveal in Finder** and check the output file.
 
 ## 3. Other ways to add files
-- **Open…** (⌘O), a **folder** dropped on the window, files dropped on the **Dock icon**, and **Open With** in Finder. Each should use the same window, without opening a second one.
+- **Add Files** (⌘O), a **folder** dropped on the window, files dropped on the **Dock icon**, and **Open With** in Finder. Each should use the same window, without opening a second one. Nothing starts until **Extract Subtitles**.
 
 ## 4. Things to try
 - Several files at once, and a folder with subfolders.
-- **Cancel** and **Cancel All** (⌘.) while a file is still starting. It should stop right away and leave no half-written file.
+- **Stop** (⌘.) and **Cancel** while a file is still starting. It should stop right away, leave no half-written file, and put that row back to Pending. Click **Extract Subtitles** again to finish it.
 - The same file twice. Check the existing-file setting is followed.
 - Delete an output file, then click **Reveal in Finder**. You should get a clear message.
 - Clear Finished (⌘⌫) and the ✕ on a finished row. Files on disk must not be touched.

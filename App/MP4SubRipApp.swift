@@ -21,7 +21,7 @@ struct MP4SubRipApp: App {
         }
         // When no window is open, this scene may create one for a Dock or Open With drop.
         .handlesExternalEvents(matching: ["*"])
-        .defaultSize(width: 720, height: 520)
+        .defaultSize(width: 900, height: 600)
         .commands {
             AppCommands(model: model, state: model.commands)
         }
@@ -42,11 +42,18 @@ struct AppCommands: Commands {
 
     var body: some Commands {
         CommandGroup(after: .newItem) {
-            Button("Open…") { model.showOpenPanel() }
+            Button("Add Files") { model.showOpenPanel() }
                 .keyboardShortcut("o")
+            if state.flags.isRunning {
+                Button("Stop") { model.stopExtraction() }
+                    .keyboardShortcut(".")
+            } else {
+                Button("Extract Subtitles") { model.extractSubtitles() }
+                    .keyboardShortcut(KeyEquivalent.return, modifiers: .command)
+                    .disabled(!state.flags.canExtract)
+            }
             Button("Cancel All") { model.cancelAll() }
-                .keyboardShortcut(".")
-                .disabled(!state.flags.hasActiveWork)
+                .disabled(!state.flags.isRunning)
             Button("Clear Finished") { model.clearFinished() }
                 .keyboardShortcut(.delete, modifiers: .command)
                 .disabled(!state.flags.canClearFinished)
