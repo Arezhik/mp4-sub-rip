@@ -23,6 +23,11 @@ Times in Mountain time (MT).
 - `c708` and captions that live only in the video bitstream are still reported and not extracted. No CCExtractor, no lavfi `subcc`, no `AVAssetReaderOutputCaptionAdaptor` (that is #28).
 - ffmpeg is located before `/Applications` is listed, and the launch log uses the same wording as the debug-log header. A missing ffmpeg skips the closed-caption file instead of writing a bad `.srt`.
 
+## 2026-11-09: Clean up ffmpeg SRT cues (issue #32)
+- A later `{\anN}` in one cue becomes a line break. The first marker in that cue is still removed. There is no punctuation fallback; raw ffmpeg 9.0.2 has a second `{\an7}` at every glue spot.
+- Overlapping cues are split at each edge and joined when neighboring slices have the same text. Identical windows become one cue. tx3g is unchanged.
+- A last cue under one second grows to max(1.5 s, 60 ms × visible characters), capped at 6 s. Movie duration is not passed through: that needs a new `extract` argument, so the ending is not capped at the movie.
+
 <!-- Template for each entry:
 ## YYYY-MM-DD ~H:MM PM MT: PR #N (what it does)
 - Agent: bc-…, branch cursor/…
