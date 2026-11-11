@@ -8,13 +8,14 @@ enum SettingsKey {
     static let placement = "outputPlacement"
     static let folder = "outputFolder"
     static let existingFile = "existingFile"
+    static let recentFolders = RecentFolderList.defaultsKey
 
     static let placementNextToSource = "nextToSource"
     static let placementFolder = "folder"
 }
 
-/// The existing-file choice. Ask once per batch with "Apply to all", never once per
-/// file in the middle of a run (PGS2SRT #5). Pick the default with Arezhik and test it.
+/// The existing-file choice. Settings is the control for the whole run.
+/// There is no per-file prompt and no Apply-to-all sheet. Skip is the default.
 enum ExistingFileChoice: String, CaseIterable {
     case skip
     case overwrite
@@ -28,17 +29,18 @@ enum SettingsSummary {
         let folder = defaults.string(forKey: SettingsKey.folder) ?? ""
         let existing = defaults.string(forKey: SettingsKey.existingFile) ?? ExistingFileChoice.skip.rawValue
         let place = placement == SettingsKey.placementFolder ? "folder \(folder.isEmpty ? "(not chosen)" : folder)" : "next to the source file"
+        let recentCount = RecentFolderList.load(defaults, key: SettingsKey.recentFolders).count
         let custom = FFmpegSettings.customPath(in: defaults)
         let resolved = ExternalTool.locate(.primary, customPath: custom)?["ffmpeg"]
         let ffmpeg = FFmpegSettings.summary(customPath: custom, resolvedPath: resolved)
-        return "save \(place), if the output exists \(existing), \(ffmpeg)"
+        return "save \(place), recents \(recentCount), if the output exists \(existing), \(ffmpeg)"
     }
 }
 
 /// Opened from the app menu, ⌘, and the toolbar's SettingsLink.
 struct SettingsView: View {
-    @AppStorage(SettingsKey.placement) private var placement = SettingsKey.placementNextToSource
-    @AppStorage(SettingsKey.folder) private var outputFolder = ""
+    @EnvironmentObject private var model: AppModel
+    @State private var placement = UITestingLaunch.defaults.string(forKey: SettingsKey.placement) ?? SettingsKey.placementNextToSource
     @AppStorage(SettingsKey.existingFile) private var existingFile = ExistingFileChoice.skip.rawValue
     @AppStorage(FFmpegSettings.placementKey) private var ffmpegPlacement = FFmpegSettings.automatic
     @AppStorage(FFmpegSettings.pathKey) private var ffmpegPath = ""
@@ -55,15 +57,17 @@ struct SettingsView: View {
                     Text("In a folder I choose").tag(SettingsKey.placementFolder)
                 }
                 .pickerStyle(.radioGroup)
+                .disabled(model.commands.flags.isRunning)
 
                 if placement == SettingsKey.placementFolder {
                     LabeledContent("Folder") {
                         HStack {
-                            Text(outputFolder.isEmpty ? "No folder chosen" : outputFolder)
+                            Text(model.outputChoice.folderPath.isEmpty ? "No folder chosen" : model.outputChoice.folderPath)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
-                                .foregroundStyle(outputFolder.isEmpty ? .secondary : .primary)
-                            Button("Choose…") { chooseFolder() }
+                                .foregroundStyle(model.outputChoice.folderPath.isEmpty ? .secondary : .primary)
+                            Button("Choose…") { model.chooseOutputFolder() }
+                                .disabled(model.commands.flags.isRunning)
                         }
                     }
                 }
@@ -135,7 +139,21 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .frame(width: 480)
         .padding(.vertical, 8)
-        .onChange(of: placement) { logChange() }
+        .onAppear { placement = model.outputChoice.placement }
+        .onChange(of: placement) {
+            let value = placement
+            DispatchQueue.main.async {
+                model.setOutputPlacement(value)
+                if model.outputChoice.placement != value {
+                    placement = model.outputChoice.placement
+                }
+            }
+        }
+        .onChange(of: model.outputChoice.placement) {
+            if placement != model.outputChoice.placement {
+                placement = model.outputChoice.placement
+            }
+        }
         .onChange(of: existingFile) { logChange() }
         .onChange(of: ffmpegPlacement) { logChange() }
         .task(id: ffmpegStatusToken) { await refreshFFmpegStatus() }
@@ -148,18 +166,6 @@ struct SettingsView: View {
     /// Settings changes go to the debug log so a tester's log shows what was set.
     private func logChange() {
         DebugLog.shared.record(.lifecycle, "Settings \(SettingsSummary.current())")
-    }
-
-    private func chooseFolder() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.canCreateDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.prompt = "Choose"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        outputFolder = url.path
-        logChange()
     }
 
     private func refreshFFmpegStatus() async {

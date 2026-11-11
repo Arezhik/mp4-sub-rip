@@ -85,6 +85,32 @@ final class SubtitleEngineTests: XCTestCase {
         XCTAssertTrue(try String(contentsOf: extra, encoding: .utf8).contains("Hello"))
     }
 
+    func testSameBaseNameInOneFolderFollowsTheExistsPolicy() async throws {
+        let root = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let firstFolder = root.appendingPathComponent("a", isDirectory: true)
+        let secondFolder = root.appendingPathComponent("b", isDirectory: true)
+        let output = root.appendingPathComponent("out", isDirectory: true)
+        try FileManager.default.createDirectory(at: firstFolder, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: secondFolder, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+        let movieA = try touchMovie(in: firstFolder, name: "Episode.mp4")
+        let movieB = try touchMovie(in: secondFolder, name: "Episode.mp4")
+        let reader = scripted(tracks: [text(1, "eng")], cues: [1: [cue("Hello", start: 0, end: 1000)]])
+
+        let first = try await SubtitleEngine(reader: reader).extract(file: movieA, outputDirectory: output, conflict: .skip)
+        XCTAssertEqual(first.written.map { URL(fileURLWithPath: $0.path).lastPathComponent }, ["Episode.srt"])
+
+        let second = try await SubtitleEngine(reader: reader).extract(file: movieB, outputDirectory: output, conflict: .skip)
+        XCTAssertTrue(second.written.isEmpty)
+        XCTAssertEqual(second.alreadyExists.map { URL(fileURLWithPath: $0.path).lastPathComponent }, ["Episode.srt"])
+        XCTAssertEqual(try String(contentsOf: output.appendingPathComponent("Episode.srt"), encoding: .utf8).contains("Hello"), true)
+
+        let numbered = try await SubtitleEngine(reader: reader).extract(file: movieB, outputDirectory: output, conflict: .keepBoth)
+        XCTAssertEqual(numbered.written.map { URL(fileURLWithPath: $0.path).lastPathComponent }, ["Episode (1).srt"])
+        XCTAssertTrue(try String(contentsOf: output.appendingPathComponent("Episode (1).srt"), encoding: .utf8).contains("Hello"))
+    }
+
     func testNoTextTracksIsAnEmptyOutcome() async throws {
         let directory = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
