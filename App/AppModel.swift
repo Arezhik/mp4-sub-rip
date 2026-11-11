@@ -9,8 +9,8 @@ import MP4SubRipCore
 final class CommandState: ObservableObject {
     @Published private(set) var flags = CommandFlags()
 
-    func update(from items: [QueueItem]) {
-        let next = CommandFlags.from(items)
+    func update(from items: [QueueItem], isRunning: Bool, hasLiveTask: Bool) {
+        let next = CommandFlags.from(items, isRunning: isRunning, hasLiveTask: hasLiveTask)
         if next != flags {
             flags = next
         }
@@ -29,6 +29,13 @@ final class AppModel: ObservableObject {
 
     private var throttles: [UUID: ProgressThrottle] = [:]
     private var tasks: [UUID: Task<Void, Never>] = [:]
+    /// True after Extract Subtitles until Stop, or until no Pending row is left.
+    private var accepting = false
+    /// Cancelled during this run. They stay Pending and wait for the next Extract.
+    private var held: Set<UUID> = []
+    @Published private(set) var highlightedIDs: Set<UUID> = []
+    private var highlightGeneration: [UUID: Int] = [:]
+    private var highlightSerial = 0
 
     init() {
         DebugLog.shared.configure(directory: DebugLog.libraryLogsDirectory, mirror: { AppLog.write($0) })
@@ -50,25 +57,48 @@ final class AppModel: ObservableObject {
 
     // MARK: Adding files
 
-    /// Drops on the window, Open…, the Dock icon, and Finder's Open With all end up here.
+    /// Drops on the window, Add Files, the Dock icon, and Finder's Open With all end up here.
+    /// Nothing starts until Extract Subtitles.
     func importURLs(_ urls: [URL]) {
         let paths = urls.map(\.path)
         // Folder walks touch the disk. Keep them off the main thread if folders can be
         // large or on a network share (NAS over Wi-Fi was slow in PGS2SRT testing).
         let result = FileIntake.collect(paths: paths, listing: .live)
-        var added = 0
-        for path in result.sourcePaths where !items.contains(where: { $0.path == path && $0.status.isActive }) {
-            items.append(QueueItem(path: path))
-            added += 1
-        }
+        let addition = QueueList.adding(result.sourcePaths, to: items)
+        items = addition.items
         for notice in result.notices {
             banners.append(notice.message)
             DebugLog.shared.record(.queue, "Notice: \(notice.message)", isWarning: true)
         }
-        DebugLog.shared.record(.queue, "Added \(added) of \(paths.count) dropped or opened items")
-        commands.update(from: items)
-        // One file at a time. Parallel mode is later queue work.
-        startNextIfIdle()
+        DebugLog.shared.record(.queue, "Added \(addition.addedCount) of \(paths.count) dropped or opened items")
+        if !addition.duplicateIDs.isEmpty {
+            DebugLog.shared.record(.queue, "Highlighted \(addition.duplicateIDs.count) already in the queue")
+            highlight(addition.duplicateIDs)
+        }
+        publishCommands()
+    }
+
+    /// Briefly marks rows that were already in the queue. Adding them again does not start work.
+    private func highlight(_ ids: [UUID]) {
+        guard !ids.isEmpty else { return }
+        highlightSerial += 1
+        let generation = highlightSerial
+        var shown = highlightedIDs
+        for id in ids {
+            highlightGeneration[id] = generation
+            shown.insert(id)
+        }
+        highlightedIDs = shown
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            var next = self.highlightedIDs
+            var changed = false
+            for id in ids where self.highlightGeneration[id] == generation {
+                self.highlightGeneration[id] = nil
+                if next.remove(id) != nil { changed = true }
+            }
+            if changed { self.highlightedIDs = next }
+        }
     }
 
     func showOpenPanel() {
@@ -89,12 +119,51 @@ final class AppModel: ObservableObject {
 
     // MARK: Extraction
 
-    /// Starts the next waiting row when nothing is running.
+    /// Runs Pending rows, one at a time. Finished rows are left as they are.
+    /// Adding files does not call this.
+    func extractSubtitles() {
+        guard !accepting, tasks.isEmpty else { return }
+        guard items.contains(where: { $0.status == .waiting }) else { return }
+        held = []
+        accepting = true
+        DebugLog.shared.record(.queue, "Extract Subtitles")
+        startNextIfIdle()
+    }
+
+    /// Stops the run. The file that is extracting is cancelled, its partial SRT
+    /// is deleted by the engine, and that row goes back to Pending.
+    func stopExtraction() {
+        accepting = false
+        let live = tasks
+        for id in live.keys {
+            held.insert(id)
+            live[id]?.cancel()
+        }
+        for item in items where item.status.isWorking {
+            DebugLog.shared.record(.work, "Canceled \(item.fileName)")
+        }
+        items = QueueRunRules.stopped(items)
+        DebugLog.shared.record(.queue, "Stop")
+        publishCommands()
+    }
+
+    /// Starts the next Pending row when a run is in progress and nothing is extracting.
     private func startNextIfIdle() {
-        guard tasks.isEmpty else { return }
-        while let next = items.first(where: { $0.status == .waiting }) {
+        guard accepting, tasks.isEmpty else {
+            publishCommands()
+            return
+        }
+        while let id = QueueRunRules.nextPending(in: items, held: held),
+              let next = items.first(where: { $0.id == id }) {
             if beginExtraction(next) { return }
         }
+        accepting = false
+        held = []
+        publishCommands()
+    }
+
+    private func publishCommands() {
+        commands.update(from: items, isRunning: accepting, hasLiveTask: !tasks.isEmpty)
     }
 
     /// False means the row was failed immediately, so the caller should try the next one.
@@ -126,8 +195,11 @@ final class AppModel: ObservableObject {
                 progress: { completed, total in
                     Task { @MainActor in
                         guard let model = AppModel.shared,
+                              model.accepting,
+                              !model.held.contains(id),
+                              model.tasks[id] != nil,
                               let current = model.items.first(where: { $0.id == id }),
-                              current.status.isActive else { return }
+                              current.status.isWorking else { return }
                         model.report(.working(completed: completed, total: total), for: id)
                     }
                 }
@@ -143,23 +215,39 @@ final class AppModel: ObservableObject {
 
     private func complete(id: UUID, finish: ExtractionFinish) {
         tasks[id] = nil
+        let wasHeld = held.contains(id)
         defer { startNextIfIdle() }
+        if wasHeld {
+            // Stop or Cancel already sent this row back to Pending. If the file
+            // finished writing before the cancel landed, keep that result.
+            if case let .success(outcome) = finish {
+                held.remove(id)
+                apply(outcome, to: id)
+            }
+            return
+        }
         guard let item = items.first(where: { $0.id == id }), item.status.isActive else { return }
         switch finish {
         case .cancelled:
-            report(.canceled, for: id)
+            held.insert(id)
+            items = QueueRunRules.cancelled(items, id: id)
+            publishCommands()
         case let .failed(message):
             report(.failed(reason: message), for: id)
         case let .success(outcome):
-            if outcome.written.count > 1 {
-                let names = outcome.written.map { URL(fileURLWithPath: $0.path).lastPathComponent }
-                DebugLog.shared.record(.work, "Saved \(names.joined(separator: ", "))")
-            }
-            if let first = outcome.written.first {
-                report(.done(outputPath: first.path), for: id)
-            } else {
-                report(.skipped(reason: skipReason(outcome)), for: id)
-            }
+            apply(outcome, to: id)
+        }
+    }
+
+    private func apply(_ outcome: ExtractionOutcome, to id: UUID) {
+        if outcome.written.count > 1 {
+            let names = outcome.written.map { URL(fileURLWithPath: $0.path).lastPathComponent }
+            DebugLog.shared.record(.work, "Saved \(names.joined(separator: ", "))")
+        }
+        if let first = outcome.written.first {
+            report(.done(outputPath: first.path), for: id)
+        } else {
+            report(.skipped(reason: skipReason(outcome)), for: id)
         }
     }
 
@@ -220,7 +308,7 @@ final class AppModel: ObservableObject {
             logStatus(status, for: items[index])
         }
         items[index].status = status
-        commands.update(from: items)
+        publishCommands()
     }
 
     private func logStatus(_ status: JobStatus, for item: QueueItem) {
@@ -244,23 +332,30 @@ final class AppModel: ObservableObject {
 
     func cancel(id: UUID) {
         // The engine checks cancellation while it reads and deletes a half-written SRT.
-        // The row is marked here; `complete` will not overwrite a row that already stopped.
+        // The row goes back to Pending. This run will not pick it up again; the next
+        // Extract will. `complete` leaves a held row alone unless the file fully finished.
+        let hadTask = tasks[id] != nil
         tasks[id]?.cancel()
-        guard let index = items.firstIndex(where: { $0.id == id }), items[index].status.isActive else { return }
-        report(.canceled, for: id)
+        held.insert(id)
+        guard let item = items.first(where: { $0.id == id }), item.status.isActive else { return }
+        DebugLog.shared.record(.work, "Canceled \(item.fileName)")
+        items = QueueRunRules.cancelled(items, id: id)
+        publishCommands()
+        if accepting && !hadTask {
+            startNextIfIdle()
+        }
     }
 
     func cancelAll() {
-        for item in items where item.status.isActive {
-            cancel(id: item.id)
-        }
+        stopExtraction()
     }
 
     /// Removes the row only. The output file on disk is never touched (PGS2SRT #8).
     func remove(id: UUID) {
         guard let item = items.first(where: { $0.id == id }), item.status.isRemovable else { return }
         items.removeAll { $0.id == id }
-        commands.update(from: items)
+        held.remove(id)
+        publishCommands()
     }
 
     /// No confirmation. An empty list goes back to the drop screen (PGS2SRT #8).
@@ -268,7 +363,7 @@ final class AppModel: ObservableObject {
         let before = items.count
         items.removeAll { $0.status.isRemovable }
         DebugLog.shared.record(.queue, "Cleared \(before - items.count) finished rows")
-        commands.update(from: items)
+        publishCommands()
     }
 
     func dismissBanner(at index: Int) {
@@ -279,6 +374,17 @@ final class AppModel: ObservableObject {
     // MARK: Finder
 
     /// Checks that the file is still there first (PGS2SRT #9), and logs the call (#33).
+    /// Shows the engine's full failure text. The row already shows a shortened line.
+    func showError(_ item: QueueItem) {
+        guard item.status.offersErrorDetail, let detail = item.status.detail else { return }
+        DebugLog.shared.record(.lifecycle, "Show Error \(item.fileName)")
+        let alert = NSAlert()
+        alert.messageText = item.fileName
+        alert.informativeText = detail
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+
     func reveal(_ item: QueueItem) {
         guard case let .done(path) = item.status else { return }
         let url = URL(fileURLWithPath: path)

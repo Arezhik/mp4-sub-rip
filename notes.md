@@ -23,6 +23,13 @@ Times in Mountain time (MT).
 - `c708` and captions that live only in the video bitstream are still reported and not extracted. No CCExtractor, no lavfi `subcc`, no `AVAssetReaderOutputCaptionAdaptor` (that is #28).
 - ffmpeg is located before `/Applications` is listed, and the launch log uses the same wording as the debug-log header. A missing ffmpeg skips the closed-caption file instead of writing a bad `.srt`.
 
+## 2026-11-10: Phase 1 queue controls (issues #3, #5, #6)
+- Adding files only queues them. **Extract Subtitles** (⌘↩) runs the serial loop and becomes **Stop** (⌘.) while a file is extracting.
+- Stop and Cancel send the in-flight row back to Pending. The engine still deletes a half-written .srt. The next Extract picks those rows up and skips Done, Failed, and Skipped.
+- Failed rows show "Failed ·" plus the engine string, with a tooltip and Show Error…. Skipped rows stay "Skipped · …" in gray, including image-based subtitles.
+- The window opens at 900×600 (minimum 640×400). The open button is Add Files. Adding a path that is already queued highlights that row and does not add a second one.
+- Folder intake still walks subfolders.
+
 ## 2026-11-09: Clean up ffmpeg SRT cues (issue #32)
 - A later `{\anN}` in one cue becomes a line break. The first marker in that cue is still removed. There is no punctuation fallback; raw ffmpeg 9.0.2 has a second `{\an7}` at every glue spot.
 - Overlapping cues are split at each edge and joined when neighboring slices have the same text. Identical windows become one cue. tx3g is unchanged.

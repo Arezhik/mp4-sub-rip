@@ -17,7 +17,7 @@ Arezhik approves the merge only after this sheet passes.
 2. [ ] Pass / Fail: …
 
 ## Regression checks (every PR)
-- [ ] A file dropped on the window, a folder (with subfolders), Open… (⌘O), a Dock drop, and Open With all add to the one window (PGS2SRT #10, #11).
+- [ ] A file dropped on the window, a folder (with subfolders), Add Files (⌘O), a Dock drop, and Open With all add to the one window (PGS2SRT #10, #11).
 - [ ] Every toolbar button and menu item does something, including Settings (⌘, and the toolbar button) (PGS2SRT #7).
 - [ ] Cancel and Cancel All stop right away, at every stage, and leave no partial output (PGS2SRT #6).
 - [ ] Clear Finished and the row ✕ remove only finished rows, never files on disk. An empty list shows the drop screen (PGS2SRT #8).

@@ -21,7 +21,7 @@ struct ContentView: View {
                 queueList
             }
         }
-        .frame(minWidth: 560, minHeight: 420)
+        .frame(minWidth: 640, minHeight: 400)
         .onDrop(of: [.fileURL], isTargeted: $targeted, perform: handleDrop)
         .overlay {
             if targeted {
@@ -34,9 +34,20 @@ struct ContentView: View {
         .toolbar {
             // Every toolbar button is also in the menu bar (AppCommands). Test each one (PGS2SRT #7).
             ToolbarItemGroup {
-                Button("Open…") { model.showOpenPanel() }
+                Button("Add Files") { model.showOpenPanel() }
+                    .help("Add Files (⌘O)")
+                if model.commands.flags.isRunning {
+                    Button("Stop") { model.stopExtraction() }
+                        .buttonStyle(.borderedProminent)
+                        .help("Stop (⌘.)")
+                } else {
+                    Button("Extract Subtitles") { model.extractSubtitles() }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(!model.commands.flags.canExtract)
+                        .help("Extract Subtitles (⌘↩)")
+                }
                 Button("Cancel All") { model.cancelAll() }
-                    .disabled(!model.commands.flags.hasActiveWork)
+                    .disabled(!model.commands.flags.isRunning)
                 Button("Clear Finished") { model.clearFinished() }
                     .disabled(!model.commands.flags.canClearFinished)
                 // macOS 14+: SettingsLink. The old showSettingsWindow: action does nothing (PGS2SRT #7).
@@ -55,9 +66,9 @@ struct ContentView: View {
         ContentUnavailableView {
             Label("Drop \(AppIdentity.inputDescription) files here", systemImage: "tray.and.arrow.down")
         } description: {
-            Text("Or drop a folder, or choose Open… (⌘O).")
+            Text("Or drop a folder, or choose Add Files (⌘O). Then click Extract Subtitles.")
         } actions: {
-            Button("Open…") { model.showOpenPanel() }
+            Button("Add Files") { model.showOpenPanel() }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -157,10 +168,13 @@ private struct QueueRow: View {
                 status
             }
             Spacer()
+            if item.status.offersErrorDetail {
+                Button("Show Error…") { model.showError(item) }
+            }
             if case .done = item.status {
                 Button("Reveal in Finder") { model.reveal(item) }
             }
-            if item.status.isActive {
+            if item.status.isWorking || (item.status == .waiting && model.commands.flags.isRunning) {
                 Button("Cancel") { model.cancel(id: item.id) }
             }
             if item.status.isRemovable {
@@ -177,30 +191,50 @@ private struct QueueRow: View {
         }
         .padding(.vertical, 4)
         .contentShape(Rectangle())
+        .background {
+            if model.highlightedIDs.contains(item.id) {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color.accentColor.opacity(0.28))
+            }
+        }
         .onHover { hovering = $0 }
+        .contextMenu {
+            if item.status.offersErrorDetail {
+                Button("Show Error…") { model.showError(item) }
+            }
+        }
     }
 
     @ViewBuilder
     private var status: some View {
         switch item.status {
-        case .waiting:
-            Text("Waiting").font(.callout).foregroundStyle(.secondary)
         case let .working(completed, total):
-            if total > 0 {
-                ProgressView(value: Double(completed), total: Double(total)) {
-                    Text("\(completed)/\(total)").font(.caption).monospacedDigit()
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.status.summary).font(.callout)
+                if total > 0 {
+                    ProgressView(value: Double(completed), total: Double(total)) {
+                        Text("\(completed)/\(total)").font(.caption).monospacedDigit()
+                    }
+                } else {
+                    ProgressView().controlSize(.small)
                 }
-            } else {
-                ProgressView().controlSize(.small)
             }
-        case let .done(outputPath):
-            Text("Done · \((outputPath as NSString).lastPathComponent)").font(.callout).foregroundStyle(.green)
-        case let .failed(reason):
-            Text(reason).font(.callout).foregroundStyle(.red)
-        case let .skipped(reason):
-            Text("Skipped · \(reason)").font(.callout).foregroundStyle(.secondary)
-        case .canceled:
-            Text("Canceled").font(.callout).foregroundStyle(.secondary)
+        case .failed:
+            Text(item.status.summary)
+                .font(.callout)
+                .foregroundStyle(.red)
+                .lineLimit(3)
+                .help(item.status.detail ?? "")
+        case .skipped:
+            Text(item.status.summary)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .lineLimit(3)
+                .help(item.status.detail ?? "")
+        case .done:
+            Text(item.status.summary).font(.callout).foregroundStyle(.green)
+        case .waiting, .canceled:
+            Text(item.status.summary).font(.callout).foregroundStyle(.secondary)
         }
     }
 }

@@ -6,6 +6,14 @@ Every merged PR that changes the shipped app bumps the version in the same PR wi
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-10 (build 6)
+### Added
+- Extract Subtitles (⌘↩) runs the queue and becomes Stop (⌘.) while a file is extracting. Adding files waits until then. Stopped rows go back to Pending (#6).
+- A failed row shows Failed and the reason, with the full message in a tooltip and Show Error…. Skipped rows stay gray (#5).
+
+### Changed
+- The window opens at 900×600. The open button is Add Files (⌘O). Adding a file that is already queued highlights that row (#3).
+
 ## [0.4.1] - 2026-11-10 (build 5)
 ### Fixed
 - ffmpeg SRT cues that packed several captions together break onto their own lines, overlapping captions share one timeline, and a last cue shorter than one second stays up a little longer (#32).
