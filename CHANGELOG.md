@@ -6,6 +6,10 @@ Every merged PR that changes the shipped app bumps the version in the same PR wi
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-11 (build 7)
+### Added
+- Settings can find ffmpeg automatically or use a copy you choose. A missing chosen copy is reported and is not replaced by another ffmpeg (#36).
+
 ## [0.5.0] - 2026-11-10 (build 6)
 ### Added
 - Extract Subtitles (⌘↩) runs the queue and becomes Stop (⌘.) while a file is extracting. Adding files waits until then. Stopped rows go back to Pending (#6).

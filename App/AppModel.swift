@@ -444,8 +444,8 @@ final class AppModel: ObservableObject {
         didLogTools = true
         let spec = ExternalToolSpec.primary
         Task.detached(priority: .userInitiated) {
-            let located = ExternalTool.describe(spec)
-            let line = ToolDetection.logLine(spec: spec, located: located)
+            let report = ExternalTool.describe(spec)
+            let line = ToolDetection.logLine(spec: spec, located: report.located, customPath: report.customPath)
             DebugLog.shared.record(.tool, line.message, isError: line.isError)
         }
     }
