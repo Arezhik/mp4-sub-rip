@@ -40,7 +40,8 @@ enum DebugMachine {
         let architecture = processArchitecture
         let rosetta = runningUnderRosetta
         let spec = ExternalToolSpec.primary
-        let facts = ToolDetection.facts(spec: spec, located: ExternalTool.describe(spec))
+        let report = ExternalTool.describe(spec)
+        let facts = ToolDetection.facts(spec: spec, located: report.located, customPath: report.customPath)
         return DebugEnvironment(
             appVersion: AppVersion.marketing,
             appBuild: AppVersion.build,

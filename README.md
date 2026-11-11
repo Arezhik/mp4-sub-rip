@@ -7,11 +7,11 @@ Add an MP4, then click Extract Subtitles. The app writes the embedded text subti
 - Drop files or a folder on the window, or choose **Add Files** (⌘O). Nothing starts until you click **Extract Subtitles** (⌘↩).
 - Drop them on the Dock icon, or right-click a file in Finder and choose **Open With → MP4SubRip**. Files go into the window that's already open.
 - **Stop** (⌘.) cancels the file that is extracting and leaves that row Pending. **Cancel All** stops the run the same way. **Clear Finished** (⌘⌫) removes finished rows from the list; it never deletes files.
-- **Settings** (⌘,) holds the output options.
+- **Settings** (⌘,) holds the output options and where to find ffmpeg. Automatic uses Homebrew, or you can choose a copy.
 - **Help → Export Debug Log…** saves a log to the Desktop to send with a bug report.
 
 ## Subtitles it reads
-Text tracks stored as tx3g (what ffmpeg calls `mov_text` when an SRT is muxed into an MP4), and discrete EIA-608 closed captions (`c608`). One track becomes `Movie.srt`. Several languages become `Movie.eng.srt`, `Movie.spa.srt`, and a forced track is marked `Movie.eng.forced.srt`. EIA-608 is read with ffmpeg (`-map 0:s:N -c:s srt`); the debug log records ffmpeg's path and version. CEA-708, captions that exist only inside the video, bitmap subtitles, and DRM-protected files are reported and skipped. A closed-caption file is skipped, not crashed, when ffmpeg is missing.
+Text tracks stored as tx3g (what ffmpeg calls `mov_text` when an SRT is muxed into an MP4), and discrete EIA-608 closed captions (`c608`). One track becomes `Movie.srt`. Several languages become `Movie.eng.srt`, `Movie.spa.srt`, and a forced track is marked `Movie.eng.forced.srt`. EIA-608 is read with ffmpeg (`-map 0:s:N -c:s srt`); the debug log records ffmpeg's path and version, and whether it was found automatically or chosen in Settings. Choose a different ffmpeg in Settings when it is not the one that was found automatically. A missing chosen copy skips a closed-caption file and is not replaced by another ffmpeg. CEA-708, captions that exist only inside the video, bitmap subtitles, and DRM-protected files are reported and skipped. A closed-caption file is skipped, not crashed, when ffmpeg is missing.
 
 ## Open it in Xcode and press Run
 1. Quit Xcode. In the repository folder, delete `.build` if you see one, then run `rm -rf ~/Library/Developer/Xcode/DerivedData/MP4SubRip-*`.

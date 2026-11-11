@@ -12,6 +12,8 @@ import Musl
 // - Search order: /opt/homebrew/bin (Apple silicon Homebrew), /usr/local/bin (Intel
 //   Homebrew), /Applications/<Prefix>*.app/Contents/MacOS, then PATH. An app launched
 //   from Finder gets a short PATH, so the fixed folders must come first.
+// - A copy chosen in Settings is used first, and only that copy. A missing chosen
+//   file does not fall back to the search above.
 // - Every executable in the spec must be found. A partial install counts as missing.
 // - Each run logs the command, the exit code, and stderr (flattened, cut at 2,000
 //   characters). Standard output stays out of the log. PGS2SRT's MKVToolNix v97 failure
@@ -64,8 +66,9 @@ public enum ToolFailure: Error, Equatable, LocalizedError {
 
     public var errorDescription: String? {
         switch self {
-        case let .notInstalled(name):
-            return "\(name) is not installed. Install it with Homebrew or from its website, then try again."
+        case .notInstalled:
+            // Same words as a skipped closed-caption track, so a later caller cannot drift.
+            return FFmpegSettings.installationMessage(customPath: FFmpegSettings.customPath())
         case let .couldNotStart(name):
             return "\(name) could not be started."
         case let .failed(tool, status):
@@ -74,17 +77,39 @@ public enum ToolFailure: Error, Equatable, LocalizedError {
     }
 }
 
+/// Where a located binary came from. Automatic is the Homebrew search.
+public enum ToolSource: Equatable, Sendable {
+    case automatic
+    case chosenInSettings
+}
+
 /// Path and version from one lookup. The launch line and the debug-log header
 /// both print this, so they can't describe two different results.
 public struct LocatedTool: Equatable, Sendable {
     public var name: String
     public var path: String
     public var version: String
+    public var source: ToolSource
 
-    public init(name: String, path: String, version: String) {
+    public init(name: String, path: String, version: String, source: ToolSource = .automatic) {
         self.name = name
         self.path = path
         self.version = version
+        self.source = source
+    }
+}
+
+/// One `describe` result, including a custom path that could not be run.
+/// The launch line and the debug-log header both take this, so a missing
+/// chosen file is described the same way in both places.
+public struct ToolReport: Equatable, Sendable {
+    public var located: LocatedTool?
+    /// `nil` is automatic. An empty string is custom with nothing chosen.
+    public var customPath: String?
+
+    public init(located: LocatedTool?, customPath: String?) {
+        self.located = located
+        self.customPath = customPath
     }
 }
 
@@ -100,37 +125,98 @@ public enum ToolDetection {
         }
     }
 
-    public static func logLine(spec: ExternalToolSpec, located: LocatedTool?) -> Line {
-        guard let located else {
-            return Line(message: "\(spec.name) not found", isError: true)
+    public static func logLine(
+        spec: ExternalToolSpec,
+        located: LocatedTool?,
+        customPath: String? = nil
+    ) -> Line {
+        if let located {
+            return Line(
+                message: "\(located.name) found (\(sourcePhrase(located.source))) \(located.path), version \(located.version)",
+                isError: false
+            )
         }
-        return Line(
-            message: "\(located.name) found \(located.path), version \(located.version)",
-            isError: false
-        )
+        if let customPath {
+            if customPath.isEmpty {
+                return Line(message: "\(spec.name) not chosen", isError: true)
+            }
+            return Line(
+                message: "\(spec.name) not found (chosen in Settings) \(customPath); automatic was not used",
+                isError: true
+            )
+        }
+        return Line(message: "\(spec.name) not found", isError: true)
     }
 
-    public static func facts(spec: ExternalToolSpec, located: LocatedTool?) -> [DebugFact] {
-        [
-            DebugFact(spec.name, located?.path ?? "not found"),
-            DebugFact("\(spec.name) version", located?.version ?? "not found")
+    public static func facts(
+        spec: ExternalToolSpec,
+        located: LocatedTool?,
+        customPath: String? = nil
+    ) -> [DebugFact] {
+        if let located {
+            return [
+                DebugFact(spec.name, "(\(sourcePhrase(located.source))) \(located.path)"),
+                DebugFact("\(spec.name) version", located.version)
+            ]
+        }
+        if let customPath {
+            if customPath.isEmpty {
+                return [
+                    DebugFact(spec.name, "not chosen"),
+                    DebugFact("\(spec.name) version", "not found")
+                ]
+            }
+            return [
+                DebugFact(spec.name, "not found (chosen in Settings) \(customPath); automatic was not used"),
+                DebugFact("\(spec.name) version", "not found")
+            ]
+        }
+        return [
+            DebugFact(spec.name, "not found"),
+            DebugFact("\(spec.name) version", "not found")
         ]
+    }
+
+    private static func sourcePhrase(_ source: ToolSource) -> String {
+        switch source {
+        case .automatic:
+            return "automatic"
+        case .chosenInSettings:
+            return "chosen in Settings"
+        }
     }
 }
 
 public enum ExternalTool {
-    /// Locates the tool and reads its version. Nil when the executable is missing.
-    public static func describe(_ spec: ExternalToolSpec = .primary) -> LocatedTool? {
-        guard let paths = locate(spec) else { return nil }
+    /// Locates the tool and reads its version. The saved Settings choice is used
+    /// unless `customPath` is passed. `nil` there means automatic.
+    public static func describe(_ spec: ExternalToolSpec = .primary) -> ToolReport {
+        describe(spec, customPath: FFmpegSettings.customPath())
+    }
+
+    public static func describe(_ spec: ExternalToolSpec, customPath: String?) -> ToolReport {
         let executable = spec.executables.first ?? spec.name
-        guard let path = paths[executable] else { return nil }
+        guard let path = locate(spec, customPath: customPath)?[executable] else {
+            return ToolReport(located: nil, customPath: customPath)
+        }
         let version = version(of: path, arguments: spec.versionArguments) ?? "unknown"
-        return LocatedTool(name: spec.name, path: path, version: version)
+        let source: ToolSource = customPath == nil ? .automatic : .chosenInSettings
+        return ToolReport(
+            located: LocatedTool(name: spec.name, path: path, version: version, source: source),
+            customPath: customPath
+        )
     }
 
     public static func locate(_ spec: ExternalToolSpec = .primary) -> ExternalToolPaths? {
+        locate(spec, customPath: FFmpegSettings.customPath())
+    }
+
+    /// `customPath` nil searches. Any other value, including an empty string,
+    /// uses only that path.
+    public static func locate(_ spec: ExternalToolSpec, customPath: String?) -> ExternalToolPaths? {
         locateInstalled(
             spec,
+            customPath: customPath,
             executableExists: isRunnable,
             applicationNames: {
                 (try? FileManager.default.contentsOfDirectory(atPath: "/Applications")) ?? []
@@ -146,10 +232,20 @@ public enum ExternalTool {
     /// `access(X_OK)` counts too, including for a relative symlink.
     static func locateInstalled(
         _ spec: ExternalToolSpec,
+        customPath: String? = nil,
         executableExists: (String) -> Bool,
         applicationNames: () -> [String],
         searchPath: String
     ) -> ExternalToolPaths? {
+        if customPath != nil {
+            return locate(
+                spec,
+                customPath: customPath,
+                executableExists: executableExists,
+                applications: [],
+                searchPath: ""
+            )
+        }
         if let found = locate(spec, executableExists: executableExists, applications: [], searchPath: "") {
             return found
         }
@@ -172,13 +268,46 @@ public enum ExternalTool {
         return FileManager.default.isExecutableFile(atPath: path)
     }
 
+    /// A runnable file is used as-is. A `.app` resolves to `Contents/MacOS/<name>`.
+    /// A directory tries `<dir>/<name>`, `<dir>/bin/<name>`, then
+    /// `<dir>/Contents/MacOS/<name>`. Anything else is rejected.
+    static func resolveCustom(
+        _ path: String,
+        executable: String,
+        executableExists: (String) -> Bool
+    ) -> String? {
+        var trimmed = path
+        while trimmed.count > 1 && trimmed.hasSuffix("/") {
+            trimmed.removeLast()
+        }
+        if trimmed.isEmpty { return nil }
+        if executableExists(trimmed) { return trimmed }
+        let base = trimmed as NSString
+        if base.pathExtension.lowercased() == "app" {
+            let inside = trimmed + "/Contents/MacOS/" + executable
+            return executableExists(inside) ? inside : nil
+        }
+        let candidates = [
+            trimmed + "/" + executable,
+            trimmed + "/bin/" + executable,
+            trimmed + "/Contents/MacOS/" + executable
+        ]
+        return candidates.first(where: executableExists)
+    }
+
     /// `applications` is the names inside `/Applications`, such as `MKVToolNix.app`.
+    /// `customPath` nil keeps the automatic search. An empty or missing custom
+    /// path returns nil and does not search.
     public static func locate(
         _ spec: ExternalToolSpec,
+        customPath: String? = nil,
         executableExists: (String) -> Bool,
         applications: [String],
         searchPath: String
     ) -> ExternalToolPaths? {
+        if let customPath {
+            return customPaths(spec, customPath: customPath, executableExists: executableExists)
+        }
         let bundles: [String]
         if let prefix = spec.appBundlePrefix, !prefix.isEmpty {
             bundles = applications.filter { $0.hasPrefix(prefix) && $0.hasSuffix(".app") }.sorted()
@@ -207,6 +336,22 @@ public enum ExternalTool {
         return found.isEmpty ? nil : ExternalToolPaths(paths: found)
     }
 
+    private static func customPaths(
+        _ spec: ExternalToolSpec,
+        customPath: String,
+        executableExists: (String) -> Bool
+    ) -> ExternalToolPaths? {
+        if customPath.isEmpty { return nil }
+        var found: [String: String] = [:]
+        for executable in spec.executables {
+            guard let path = resolveCustom(customPath, executable: executable, executableExists: executableExists) else {
+                return nil
+            }
+            found[executable] = path
+        }
+        return found.isEmpty ? nil : ExternalToolPaths(paths: found)
+    }
+
     /// The first line the tool prints for its version arguments.
     public static func version(of executable: String, arguments: [String] = ExternalToolSpec.primary.versionArguments) -> String? {
         let process = Process()
@@ -229,6 +374,59 @@ public enum ExternalTool {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard let line, !line.isEmpty else { return nil }
         return line
+    }
+}
+
+/// Saved ffmpeg choice. Automatic keeps the Homebrew search. A custom path is
+/// used alone; a missing file does not fall back.
+public enum FFmpegSettings {
+    public static let placementKey = "ffmpegPlacement"
+    public static let pathKey = "ffmpegPath"
+    public static let automatic = "automatic"
+    public static let custom = "custom"
+
+    /// `nil` is automatic. An empty string is custom with nothing chosen.
+    public static func customPath(in defaults: UserDefaults = .standard) -> String? {
+        let placement = defaults.string(forKey: placementKey) ?? automatic
+        guard placement == custom else { return nil }
+        return defaults.string(forKey: pathKey) ?? ""
+    }
+
+    public static func summary(customPath: String?, resolvedPath: String?) -> String {
+        if let customPath {
+            if customPath.isEmpty { return "ffmpeg not chosen" }
+            return "ffmpeg chosen \(customPath)"
+        }
+        if let resolvedPath {
+            return "ffmpeg automatic \(resolvedPath)"
+        }
+        return "ffmpeg not found"
+    }
+
+    static func installationMessage(customPath: String?) -> String {
+        guard let customPath else {
+            return "Closed-caption extraction needs ffmpeg. Install it with Homebrew, or choose it in Settings."
+        }
+        if customPath.isEmpty {
+            return "Choose ffmpeg in Settings."
+        }
+        return "The ffmpeg chosen in Settings can't be found. Choose it again in Settings."
+    }
+
+    /// The executable a chosen file, app, or folder points at, when it can be run.
+    public static func runnableExecutable(at path: String) -> String? {
+        let name = ExternalToolSpec.primary.executables.first ?? "ffmpeg"
+        return ExternalTool.resolveCustom(path, executable: name, executableExists: ExternalTool.isRunnable)
+    }
+
+    /// Pick-time check. The resolved program must run, and its first version line must mention ffmpeg.
+    public static func validatedExecutable(at path: String) -> String? {
+        guard let resolved = runnableExecutable(at: path) else { return nil }
+        guard let line = ExternalTool.version(of: resolved, arguments: ExternalToolSpec.primary.versionArguments) else {
+            return nil
+        }
+        guard line.range(of: "ffmpeg", options: .caseInsensitive) != nil else { return nil }
+        return resolved
     }
 }
 
