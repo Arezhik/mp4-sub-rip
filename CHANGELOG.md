@@ -10,6 +10,9 @@ Every merged PR that changes the shipped app bumps the version in the same PR wi
 ### Added
 - Settings can find ffmpeg automatically or use a copy you choose. A missing chosen copy is reported and is not replaced by another ffmpeg (#36).
 
+### Fixed
+- Extract Subtitles enables again after Stop, once the cancelled file finishes cleaning up (#39).
+
 ## [0.5.0] - 2026-11-10 (build 6)
 ### Added
 - Extract Subtitles (⌘↩) runs the queue and becomes Stop (⌘.) while a file is extracting. Adding files waits until then. Stopped rows go back to Pending (#6).

@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import Foundation
 import UniformTypeIdentifiers
 import MP4SubRipCore
@@ -25,6 +26,9 @@ final class AppModel: ObservableObject {
     @Published private(set) var items: [QueueItem] = []
     @Published private(set) var banners: [String] = []
     let commands = CommandState()
+    /// `commands` is not `@Published`. Forward its changes so the toolbar redraws
+    /// when only the flags change, such as Extract enabling after Stop's cleanup.
+    private var commandForwarding: AnyCancellable?
     static weak var shared: AppModel?
 
     private var throttles: [UUID: ProgressThrottle] = [:]
@@ -38,6 +42,9 @@ final class AppModel: ObservableObject {
     private var highlightSerial = 0
 
     init() {
+        commandForwarding = commands.objectWillChange.sink { [weak self] _ in
+            self?.objectWillChange.send()
+        }
         DebugLog.shared.configure(directory: DebugLog.libraryLogsDirectory, mirror: { AppLog.write($0) })
         logLaunch()
         AppModel.shared = self
