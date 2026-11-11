@@ -621,8 +621,8 @@ final class AppModel: ObservableObject {
     ) {
         let action = RevealRules.plan(
             paths: paths,
-            fileExists: Self.regularFileExists,
-            directoryExists: Self.directoryExists,
+            fileExists: { @Sendable path in Self.regularFileExists(path) },
+            directoryExists: { @Sendable path in Self.directoryExists(path) },
             missingGroupName: groupName
         )
         switch action {
@@ -634,7 +634,9 @@ final class AppModel: ObservableObject {
             if reveal {
                 NSWorkspace.shared.activateFileViewerSelecting(urls)
             } else {
-                NSWorkspace.shared.open(urls)
+                for url in urls {
+                    NSWorkspace.shared.open(url)
+                }
             }
         case let .missing(name, folder, folderExists):
             DebugLog.shared.record(.lifecycle, "\(logAction): file missing \(name)", isWarning: true)

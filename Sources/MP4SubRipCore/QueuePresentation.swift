@@ -552,7 +552,7 @@ public enum RecentFolderList {
         return result
     }
 
-    public static func load(_ defaults: UserDefaults, key: String = defaultsKey) -> [RecentFolderRecord] {
+    public static func load(_ defaults: UserDefaults = .standard, key: String = defaultsKey) -> [RecentFolderRecord] {
         guard let data = defaults.data(forKey: key) else { return [] }
         guard let decoded = try? JSONDecoder().decode([RecentFolderRecord].self, from: data) else { return [] }
         return decoded.map { RecentFolderRecord(path: $0.path, bookmark: $0.bookmark) }
