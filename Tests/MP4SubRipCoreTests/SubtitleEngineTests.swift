@@ -265,7 +265,7 @@ final class SubtitleEngineTests: XCTestCase {
         )).extract(file: movie, conflict: .overwrite)
         XCTAssertTrue(outcome.written.isEmpty)
         XCTAssertEqual(outcome.skipped.map(\.reason), [.needsFFmpeg])
-        XCTAssertEqual(outcome.skipped.first?.reason.message, "Closed-caption extraction needs ffmpeg.")
+        XCTAssertEqual(outcome.skipped.first?.reason.message, "Closed-caption extraction needs ffmpeg. Install it with Homebrew, or choose it in Settings.")
         let names = try FileManager.default.contentsOfDirectory(atPath: directory.path)
         XCTAssertEqual(names, ["Movie.mp4"])
     }

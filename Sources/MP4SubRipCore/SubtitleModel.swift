@@ -9,7 +9,7 @@ import Foundation
 public enum SubtitleSkipReason: Equatable, Sendable {
     /// CEA-708, or captions that are not a discrete EIA-608 track.
     case closedCaption
-    /// The file has a discrete EIA-608 track, and ffmpeg is not installed.
+    /// The file has a discrete EIA-608 track, and ffmpeg is not available.
     case needsFFmpeg
     /// PGS, VobSub, or another image subtitle. This app does not OCR.
     case bitmap
@@ -24,7 +24,7 @@ public enum SubtitleSkipReason: Equatable, Sendable {
         case .closedCaption:
             return "Closed captions are not a text subtitle track."
         case .needsFFmpeg:
-            return "Closed-caption extraction needs ffmpeg."
+            return FFmpegSettings.installationMessage(customPath: FFmpegSettings.customPath())
         case .bitmap:
             return "Image-based subtitles (needs OCR)."
         case .webVTT:

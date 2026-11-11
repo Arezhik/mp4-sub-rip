@@ -5,7 +5,7 @@ Thanks for testing! This is an early build. Please try to break it and tell me w
 ## What you need
 - A Mac running macOS 14.0 or later (Apple silicon or Intel).
 - A few real .mp4 files that contain SRT-style (text) subtitles, including one with more than one language if you have it. A large file is useful too.
-- ffmpeg is required for EIA-608 closed captions. Text subtitles (tx3g) do not need it. The debug log says whether ffmpeg was found.
+- ffmpeg is required for EIA-608 closed captions. Text subtitles (tx3g) do not need it. Settings can find ffmpeg automatically or use a copy you choose. The debug log says which, and its path and version.
 
 ## 1. Install
 1. Unzip `MP4SubRip-universal.zip` and drag **MP4SubRip.app** into **Applications**.

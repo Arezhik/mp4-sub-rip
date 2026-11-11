@@ -26,7 +26,7 @@ Arezhik approves the merge only after this sheet passes.
 - [ ] Open a menu during a long run. No flicker (PGS2SRT #35).
 - [ ] The Xcode console shows no purple runtime warnings, such as "Publishing changes from within view updates", when you click controls with the mouse and with shortcuts (PGS2SRT #30).
 - [ ] Help → Export Debug Log saves to the Desktop, and the new feature's events are in it.
-- [ ] With `ffmpeg` missing, a clear message appears and nothing crashes. With it installed, the debug log shows its path and version.
+- [ ] With `ffmpeg` missing, a clear message appears and nothing crashes. With it installed, the debug log shows its path and version, and whether it was found automatically or chosen in Settings.
 
 ## Notes
 ________________________________________________________________

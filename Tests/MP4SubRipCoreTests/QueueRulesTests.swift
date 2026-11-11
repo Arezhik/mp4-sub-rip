@@ -138,4 +138,16 @@ final class QueueRulesTests: XCTestCase {
         XCTAssertFalse(CommandFlags.from(done).canExtract)
         XCTAssertFalse(CommandFlags.from(done).isRunning)
     }
+
+    /// Stop puts rows back to Pending while the cancelled task is still cleaning up.
+    /// Extract stays disabled until that task is gone, then it enables.
+    func testExtractEnablesAfterStopCleanup() {
+        let pending = [QueueItem(path: "/a", status: .waiting)]
+        let cleaningUp = CommandFlags.from(pending, isRunning: false, hasLiveTask: true)
+        XCTAssertFalse(cleaningUp.isRunning)
+        XCTAssertFalse(cleaningUp.canExtract)
+        let cleaned = CommandFlags.from(pending, isRunning: false, hasLiveTask: false)
+        XCTAssertFalse(cleaned.isRunning)
+        XCTAssertTrue(cleaned.canExtract)
+    }
 }
