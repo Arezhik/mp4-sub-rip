@@ -5,7 +5,7 @@ Times in Mountain time (MT).
 
 - Repo: <https://github.com/Arezhik/REPO>
 - Spec: SPEC.md
-- Checklist used at kickoff: AGENTS.md (from the macOS Dev living checklist)
+- Checklist used at kickoff: AGENTS.md (from the macOS Dev living checklist). Refresh 2026-11-14: folded in Phase 1 queue/Stop, ffmpeg Settings (no fallback when chosen), AVFoundation vs c608 split, and Debug ARCHS lessons from merged PRs.
 
 ## 2026-11-04: Project created
 - Generated with new-mac-app.sh (name MP4SubRip, bundle ID com.arezhik.MP4SubRip, macOS 14.0+).

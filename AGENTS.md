@@ -1,29 +1,33 @@
 # Rules for this repo (macOS app; from PGS2SRT lessons)
-- Native Swift/SwiftUI macOS app, universal (arm64 + x86_64), unsigned, not sandboxed.
-- You run on Linux and can't run Xcode or the app. Put logic in the Swift package (no AppKit or SwiftUI) and cover it with `swift test`. CI on macOS is the real build check.
-- Don't rename the package to the app's name, and don't move the `.xcodeproj` out of `App/`. If you add or rename an app file, edit `App/MP4SubRip.xcodeproj/project.pbxproj` and `App/project.yml`.
-- Fix only the issue you were given. Note other problems in the PR description instead of fixing them.
+- Native Swift/SwiftUI macOS app, universal (arm64 + x86_64), unsigned, not sandboxed. Minimum macOS 14.0.
+- You run on Linux and can't run Xcode, the app, or AVFoundation. Put logic in the Swift package (no AppKit, SwiftUI, AVFoundation, or Vision) and cover it with `swift test`. CI on macOS is the real app build check. Probe helpers and parsers that don't need AVFoundation stay in the package so Linux can still test them.
+- Don't rename the package to the app's name, and don't move the `.xcodeproj` out of `App/`. If you add or rename an app file, edit `App/MP4SubRip.xcodeproj/project.pbxproj` and `App/project.yml`. Open `App/MP4SubRip.xcodeproj`, never `Package.swift`, for the windowed app.
+- Don't set `ARCHS` for Debug. Debug follows the run destination (`ONLY_ACTIVE_ARCH=YES`). Release stays universal.
+- Fix only the issue you were given. Note other problems in the PR description instead of fixing them. Don't pull later-phase work into the current PR; keep it as open issues.
 - Build with `-strict-concurrency=complete -warnings-as-errors`. Keep the core Sendable-clean.
 - Every long loop checks `Task.checkCancellation()`, including reading and decoding. Cancel deletes partial output.
 - Never write `@Published` or observed state during a view update. Controls keep local `@State` and write the model on the next run-loop turn (`DispatchQueue.main.async` or `Task { @MainActor in }`).
-- Throttle progress to about 10 updates a second. Menu commands read only `CommandFlags`, which publish only when they change.
-- Don't replace a window's delegate. Observe `NSWindow` notifications. If you must replace it, use `SafeWindowDelegateProxy` and list every method you implement.
+- Throttle progress to about 10 updates a second (`AppModel.report`). Menu commands read only `CommandFlags`, which publish only when they change (stops menu flicker while a file runs).
+- Extract Subtitles / Stop: adding files only queues them. Extract runs the serial loop and becomes Stop while a file is extracting. Stop/Cancel send the in-flight row back to Pending and delete a half-written `.srt`. Extract must enable again only after Stop's cleanup finishes (not while the cancelled task is still tearing down).
+- Don't replace a window's delegate. Observe `NSWindow` notifications. If you must replace it, use a `SafeWindowDelegateProxy`-style ObjC forwarder and list every method you implement (see PGS2SRT's `ReviewWindowDelegateProxy`).
 - Don't set window properties from `layout()`.
 - Every toolbar item is also in the menu bar. Settings opens with `SettingsLink` or `openSettings`.
-- Dock drops and Open With reuse the one open window. Folders walk subfolders.
+- Dock drops and Open With reuse the one open window. Folders walk subfolders. Adding a path that is already queued highlights that row; don't add a duplicate.
 - Clear Finished and the row ✕ act only on finished, failed, skipped, or canceled rows. Never delete files on disk. An empty queue shows the drop screen. No confirmation.
-- Existing output: ask once per batch with "Apply to all". Never ask per file mid-batch.
-- Reveal in Finder checks the file exists first, uses `activateFileViewerSelecting`, and logs the call.
-- External tools: search /opt/homebrew/bin, /usr/local/bin, /Applications/<Tool>*.app/Contents/MacOS, then PATH. Log the command, exit code, and stderr (cut at 2,000 characters). Show a clear message if the tool is missing.
+- Existing output: ask once per batch with "Apply to all". Never ask per file mid-batch. Settings choose Skip (default), Overwrite, or Add a number; the engine applies that choice.
+- Subtitle pipelines: tx3g / mov_text via AVFoundation (`AVAssetReader`, nil output settings) in the app layer behind `SubtitleMediaReading`. Discrete EIA-608 (`c608`) via ffmpeg (`-map 0:s:N -c:s srt`). CEA-708, captions only inside the video, bitmap, WebVTT-in-MP4, DRM, and other codecs are typed skip/fail reasons — don't extract them. Don't add CCExtractor or lavfi `subcc` unless a tracked issue asks for it.
+- ffmpeg SRT cleanup (c608 only): strip the first `{\anN}` in a cue; a later one in the same cue becomes a line break; remove `<font>` / `</font>` and `\h`; keep real `<i>`. Flatten overlapping cues onto one timeline; lengthen a last cue under one second. No punctuation-based glue fallback.
+- External tools: search `/opt/homebrew/bin`, `/usr/local/bin`, `/Applications/<Tool>*.app/Contents/MacOS`, then `PATH`. Log the command, exit code, and stderr (cut at 2,000 characters). Settings can find ffmpeg automatically or use a copy the user chooses. A chosen path is used alone — if it is missing, do not fall back to automatic; skip the closed-caption file and say so. Launch log and debug-log header must say whether the copy was automatic or chosen.
 - Log through `DebugLog.shared.record(...)`: launch, settings, each file's start, finish, and error, window events, Saves, and Reveal. No user content. Home becomes `~`.
-- Add a test with every bug fix. Use small generated fixtures and keep real media out of git.
-- In the PR description, list the test steps for Arezhik to run on his Mac. He tests and approves every merge.
-- Versioning (SemVer): in the same PR, run `scripts/bump-version.sh patch` for a bug fix or small tweak, `minor` for a new feature, or `major` for a major enhancement or new phase. Docs-only and CI-only PRs don't bump.
-- The build number goes up by 1 with every bump and is never reused. Don't edit the version by hand. The script keeps project.pbxproj and project.yml in sync, and `--check` must pass.
+- Reveal in Finder checks the file exists first, uses `activateFileViewerSelecting`, and logs the call.
+- Add a test with every bug fix. Use small generated fixtures and keep real media out of git. Arezhik's local samples (for example `~/Desktop/Test MP4s`) are for Mac test steps only.
+- In the PR description, list the test steps for Arezhik to run on his Mac (use `docs/PR_TEST_CHECKLIST.md`). He tests and approves every merge.
+- Versioning (SemVer): in the same PR, run `scripts/bump-version.sh patch` for a bug fix or small tweak, `minor` for a new feature, or `major` for a major enhancement or new phase. Docs-only and CI-only PRs don't bump. `scripts/bump-version.sh --check` must pass (CI runs it).
+- The build number goes up by 1 with every bump and is never reused. Don't edit the version by hand. The script keeps project.pbxproj and project.yml in sync.
 - Fill in the CHANGELOG.md entry. Put `Version bump: old to new (rule)` in the PR description. Arezhik confirms it at merge.
 
 ## This project
 - App MP4SubRip, bundle ID `com.arezhik.MP4SubRip`, macOS 14.0+.
 - Package `MP4SubRipKit` (module `MP4SubRipCore`, tests `MP4SubRipCoreTests`). Xcode project `App/MP4SubRip.xcodeproj`, scheme `MP4SubRip`.
-- Version: `scripts/bump-version.sh --current` (started at 0.1.0, build 1). History: CHANGELOG.md.
-- Scope: SPEC.md. Test sheet template: docs/PR_TEST_CHECKLIST.md. CI artifact: `MP4SubRip-universal.zip`.
+- Version: `scripts/bump-version.sh --current` (started at 0.1.0, build 1). History: CHANGELOG.md. Decision log: notes.md.
+- Scope: SPEC.md. Test sheet template: docs/PR_TEST_CHECKLIST.md. Tester guide: TESTERS.md. CI artifact: `MP4SubRip-universal.zip`.
