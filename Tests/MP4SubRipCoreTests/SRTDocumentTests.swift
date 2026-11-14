@@ -35,6 +35,15 @@ final class SRTDocumentTests: XCTestCase {
         XCTAssertEqual(SRTDocument.normalize("a\r\n\r\nb\n"), "a\nb")
     }
 
+    func testWhitespaceOnlyLinesInsideACueAreDropped() {
+        XCTAssertEqual(SRTDocument.normalize("a\n \t \nb"), "a\nb")
+        XCTAssertEqual(SRTDocument.normalize("  indented\n   \nkept"), "indented\nkept")
+        let text = SRTDocument.render([
+            SubtitleCue(startMilliseconds: 0, endMilliseconds: 1000, text: "Top\n   \nBottom")
+        ])
+        XCTAssertEqual(text, "1\n00:00:00,000 --> 00:00:01,000\nTop\nBottom\n")
+    }
+
     func testEmptyInputRendersNothing() {
         XCTAssertEqual(SRTDocument.render([]), "")
         XCTAssertEqual(
