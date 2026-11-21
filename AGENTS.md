@@ -26,6 +26,12 @@
 - The build number goes up by 1 with every bump and is never reused. Don't edit the version by hand. The script keeps project.pbxproj and project.yml in sync.
 - Fill in the CHANGELOG.md entry. Put `Version bump: old to new (rule)` in the PR description. Arezhik confirms it at merge.
 
+### Local Linux VM (no Swift installed)
+- Apply these rules only when `command -v swift` finds nothing (or when xcodegen exists at `/workspace/macos-dev-test/projects/mkv-forge/icon/tools/XcodeGen-2.48.0/.build/x86_64-unknown-linux-gnu/release/xcodegen`). Everywhere else the rules above apply unchanged.
+- Edit source files directly in the working tree. Don't generate `apply_changes.py` or `verify.diff`.
+- If project structure or targets changed and the repo uses `App/project.yml`, run `/workspace/macos-dev-test/projects/mkv-forge/icon/tools/XcodeGen-2.48.0/.build/x86_64-unknown-linux-gnu/release/xcodegen generate` in `App/` from a clone folder whose name matches what the project expects. Then run this repo's non-Swift check script: `bash scripts/bump-version.sh --check`. That is the only non-Swift check (`scripts/` has `bump-version.sh`; the Linux CI job's other steps are `swift test -Xswiftc -strict-concurrency=complete -Xswiftc -warnings-as-errors` and `swift build -Xswiftc -strict-concurrency=complete -Xswiftc -warnings-as-errors`). Inspect `git diff` so only intended changes are staged. Don't run `swift test`, `swift build`, or `xcodebuild` here; they run in GitHub CI after push.
+- Push to a feature branch `grok/<slug>`, then open a PR with `gh pr create --fill` (or `--draft` for work in progress) because CI runs on pull requests. Check CI with `gh pr checks` or `gh run list` only if `gh auth status` succeeds. No version bump, no CHANGELOG change.
+
 ## This project
 - App MP4SubRip, bundle ID `com.arezhik.MP4SubRip`, macOS 14.0+.
 - Package `MP4SubRipKit` (module `MP4SubRipCore`, tests `MP4SubRipCoreTests`). Xcode project `App/MP4SubRip.xcodeproj`, scheme `MP4SubRip`.
