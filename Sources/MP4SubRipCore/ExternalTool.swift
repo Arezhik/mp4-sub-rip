@@ -385,8 +385,13 @@ public enum FFmpegSettings {
     public static let automatic = "automatic"
     public static let custom = "custom"
 
+    /// Defaults used when a caller does not pass a store. The app points this
+    /// at the UI-testing suite when launched with `--uitesting`, and leaves it
+    /// as `UserDefaults.standard` otherwise. Set once at launch.
+    public nonisolated(unsafe) static var defaultsStore: UserDefaults = .standard
+
     /// `nil` is automatic. An empty string is custom with nothing chosen.
-    public static func customPath(in defaults: UserDefaults = .standard) -> String? {
+    public static func customPath(in defaults: UserDefaults = FFmpegSettings.defaultsStore) -> String? {
         let placement = defaults.string(forKey: placementKey) ?? automatic
         guard placement == custom else { return nil }
         return defaults.string(forKey: pathKey) ?? ""

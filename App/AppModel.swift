@@ -30,6 +30,7 @@ final class AppModel: ObservableObject {
     /// when only the flags change, such as Extract enabling after Stop's cleanup.
     private var commandForwarding: AnyCancellable?
     static weak var shared: AppModel?
+    private let defaults: UserDefaults
 
     private var throttles: [UUID: ProgressThrottle] = [:]
     private var tasks: [UUID: Task<Void, Never>] = [:]
@@ -41,7 +42,9 @@ final class AppModel: ObservableObject {
     private var highlightGeneration: [UUID: Int] = [:]
     private var highlightSerial = 0
 
-    init() {
+    init(defaults: UserDefaults = UITestingLaunch.defaults) {
+        self.defaults = defaults
+        UITestingLaunch.prepare()
         commandForwarding = commands.objectWillChange.sink { [weak self] _ in
             self?.objectWillChange.send()
         }
@@ -59,6 +62,20 @@ final class AppModel: ObservableObject {
         }
         if AppDelegate.isFinishedLaunching {
             logInstalledTools()
+        }
+        applyUITestingLaunch()
+    }
+
+    /// `--uitesting` only. Apply `UITEST_OUTPUT_DIR` as the chosen output
+    /// folder and `UITEST_INPUT_DIR` as if it had been opened or dropped.
+    /// Extraction does not start until Extract Subtitles.
+    private func applyUITestingLaunch() {
+        if let output = UITestingLaunch.outputDirectory() {
+            defaults.set(SettingsKey.placementFolder, forKey: SettingsKey.placement)
+            defaults.set(output.path, forKey: SettingsKey.folder)
+        }
+        if let input = UITestingLaunch.inputDirectory() {
+            importURLs([input])
         }
     }
 
@@ -271,8 +288,7 @@ final class AppModel: ObservableObject {
         return parts.joined(separator: " ")
     }
 
-    private static func extractionRequest() -> ExtractionRequest {
-        let defaults = UserDefaults.standard
+    private static func extractionRequest(defaults: UserDefaults = FFmpegSettings.defaultsStore) -> ExtractionRequest {
         let placement = defaults.string(forKey: SettingsKey.placement) ?? SettingsKey.placementNextToSource
         let existing = defaults.string(forKey: SettingsKey.existingFile) ?? ExistingFileChoice.skip.rawValue
         let conflict: OutputConflictPolicy

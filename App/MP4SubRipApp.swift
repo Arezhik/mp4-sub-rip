@@ -16,6 +16,7 @@ struct MP4SubRipApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(model)
+                .defaultAppStorage(UITestingLaunch.defaults)
                 // An open queue window takes the file, instead of a new window (PGS2SRT #10).
                 .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
         }
@@ -29,6 +30,7 @@ struct MP4SubRipApp: App {
         Settings {
             SettingsView()
                 .environmentObject(model)
+                .defaultAppStorage(UITestingLaunch.defaults)
         }
     }
 }
