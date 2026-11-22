@@ -15,6 +15,7 @@
 		7255EE65D5F132DDCCBF73CE /* MP4SubRipApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC68C7D2A959F4F949F46154 /* MP4SubRipApp.swift */; };
 		7D927AB6FC643565185F9620 /* HelloWorldUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9072CB7B9DFDDDCE2D25745 /* HelloWorldUITests.swift */; };
 		B03720F58E12F0BD5004D6C8 /* DebugLogSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9456220548F18AF182996979 /* DebugLogSupport.swift */; };
+		BE57E1DA07C72EF7C99E5483 /* UITestFixtureBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D962DCD0D9C144ABEE40E37 /* UITestFixtureBuilder.swift */; };
 		E71559FD6EAD6E845D9AE183 /* MP4SubRipCore in Frameworks */ = {isa = PBXBuildFile; productRef = 5C6A8FC626F65C192C9CD94E /* MP4SubRipCore */; };
 		EB1B02E406225B1E2713C383 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24255DE297AE82DC80E922F2 /* AppModel.swift */; };
 		F1848E6E5715D6AEABE5F7C1 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 084F56A8F03FBA28B2193E86 /* ContentView.swift */; };
@@ -36,6 +37,7 @@
 		1EDF7F1C67101F6E78909643 /* WindowEvents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowEvents.swift; sourceTree = "<group>"; };
 		24255DE297AE82DC80E922F2 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		6C0E9A2495EBDFF179D9B5D3 /* MP4SubRip.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MP4SubRip.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		7D962DCD0D9C144ABEE40E37 /* UITestFixtureBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UITestFixtureBuilder.swift; sourceTree = "<group>"; };
 		939F0297BED8320C0C920EF9 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		9456220548F18AF182996979 /* DebugLogSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugLogSupport.swift; sourceTree = "<group>"; };
 		AC68C7D2A959F4F949F46154 /* MP4SubRipApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MP4SubRipApp.swift; sourceTree = "<group>"; };
@@ -63,6 +65,7 @@
 			isa = PBXGroup;
 			children = (
 				F9072CB7B9DFDDDCE2D25745 /* HelloWorldUITests.swift */,
+				7D962DCD0D9C144ABEE40E37 /* UITestFixtureBuilder.swift */,
 			);
 			path = MP4UITests;
 			sourceTree = "<group>";
@@ -226,6 +229,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				7D927AB6FC643565185F9620 /* HelloWorldUITests.swift in Sources */,
+				BE57E1DA07C72EF7C99E5483 /* UITestFixtureBuilder.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
