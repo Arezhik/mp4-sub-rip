@@ -1,22 +1,28 @@
-# Backup recipe for XcodeGen, the same arrangement PGS2SRT uses. The checked-in
-# MP4SubRip.xcodeproj is the source of truth; this file only matters if you ever
-# regenerate it: `brew install xcodegen`, then `cd App && xcodegen generate`.
-# If you add or rename an app .swift file, update BOTH this file and the .xcodeproj
-# (or regenerate). The Xcode project must not sit next to Package.swift, and the
-# package must not be named MP4SubRip, or Xcode reports the products as missing.
+# Source of truth for App/MP4SubRip.xcodeproj. Never hand-edit project.pbxproj:
+# change this file, then run ./scripts/verify-linux.sh (XcodeGen 2.48.0).
+# The script generates from a folder named mp4-sub-rip (the GitHub repo)
+# so the local package's folder reference stays stable. A second run must
+# change nothing, and the project must have no TEMP_ object IDs.
+# The Xcode project must not sit next to Package.swift, and the package
+# must not be named MP4SubRip, or Xcode reports the products as missing.
 name: MP4SubRip
 options:
   bundleIdPrefix: com.arezhik
   deploymentTarget:
     macOS: "14.0"
-  createIntermediateGroups: true
+  # Off: with `path: .`, intermediate groups leave files under random TEMP_ IDs
+  # so every `xcodegen generate` writes a different project (same as mkv-forge L33).
+  createIntermediateGroups: false
+  defaultConfig: Release
 settings:
-  MACOSX_DEPLOYMENT_TARGET: "14.0"
-  SDKROOT: macosx
-  SUPPORTED_PLATFORMS: macosx
-  SUPPORTS_MACCATALYST: NO
-  SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
-  SWIFT_VERSION: "5.0"
+  # XcodeGen ignores plain keys next to configs:, so project-wide keys go under base:.
+  base:
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    SDKROOT: macosx
+    SUPPORTED_PLATFORMS: macosx
+    SUPPORTS_MACCATALYST: NO
+    SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+    SWIFT_VERSION: "5.0"
   configs:
     Debug:
       # Do not set ARCHS here. Debug follows the run destination (My Mac),
