@@ -37,3 +37,32 @@
 - Package `MP4SubRipKit` (module `MP4SubRipCore`, tests `MP4SubRipCoreTests`). Xcode project `App/MP4SubRip.xcodeproj`, scheme `MP4SubRip`.
 - Version: `scripts/bump-version.sh --current` (started at 0.1.0, build 1). History: CHANGELOG.md. Decision log: notes.md.
 - Scope: SPEC.md. Test sheet template: docs/PR_TEST_CHECKLIST.md. Tester guide: TESTERS.md. CI artifact: `MP4SubRip-universal.zip`.
+
+## GitHub Issue & Comment Format (Token-Efficient Spec)
+When creating, rewriting, or commenting on GitHub issues (including triage, design notes, or research), **never post conversational prose**. Preserve the original human description at the top if editing an existing issue, and append or post strictly in this compact schema:
+
+### For Issue Rewrites / Specs (`## Agent Spec`)
+```markdown
+## Agent Spec
+### Goal
+<1–2 sentences: exact behavioral change>
+
+### Rules & Logic
+- <Deterministic rule or edge-case behavior>
+
+### UI / UX
+- <Control type, exact label, default state, placement — or "None">
+
+### Test Cases (Input -> Expected)
+- `<Input>` -> `<Expected result / output>`
+
+### Constraints
+- <What must NOT change>
+```
+
+### For Research / Triage / Design Comments
+Keep comments under 15 lines using only:
+- **Relevant Files:** `<path/to/File.swift>` (`SymbolName`)
+- **Findings / Edge Cases:** <1–3 terse bullets>
+- **Proposed Approach:** <2–4 terse bullets>
+- **Open Questions:** <Bullet list, or "None">
