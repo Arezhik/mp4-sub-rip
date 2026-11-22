@@ -6,6 +6,10 @@ Every merged PR that changes the shipped app bumps the version in the same PR wi
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-11-14 (build 8)
+### Fixed
+- A line of only spaces or tabs inside a subtitle no longer splits the cue in the written .srt.
+
 ## [0.6.0] - 2026-11-11 (build 7)
 ### Added
 - Settings can find ffmpeg automatically or use a copy you choose. A missing chosen copy is reported and is not replaced by another ffmpeg (#36).

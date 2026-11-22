@@ -17,14 +17,15 @@ enum SRTDocument {
         return blocks.joined(separator: "\n")
     }
 
-    /// A blank line would end the cue early, so collapsed blank lines inside the text stay one line.
+    /// A blank line would end the cue early, and many players also treat a line of only spaces
+    /// or tabs as blank. Both kinds are dropped, so the cue's text stays together.
     static func normalize(_ text: String) -> String {
         var text = text.replacingOccurrences(of: "\r\n", with: "\n")
         text = text.replacingOccurrences(of: "\r", with: "\n")
-        while text.contains("\n\n") {
-            text = text.replacingOccurrences(of: "\n\n", with: "\n")
+        let lines = text.components(separatedBy: "\n").filter {
+            !$0.trimmingCharacters(in: .whitespaces).isEmpty
         }
-        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Cues ffmpeg wrote. A block that is not a cue is ignored. Empty text is dropped.
