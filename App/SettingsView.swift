@@ -23,7 +23,7 @@ enum ExistingFileChoice: String, CaseIterable {
 
 /// One line for the debug log header and the launch line.
 enum SettingsSummary {
-    static func current(_ defaults: UserDefaults = .standard) -> String {
+    static func current(_ defaults: UserDefaults = FFmpegSettings.defaultsStore) -> String {
         let placement = defaults.string(forKey: SettingsKey.placement) ?? SettingsKey.placementNextToSource
         let folder = defaults.string(forKey: SettingsKey.folder) ?? ""
         let existing = defaults.string(forKey: SettingsKey.existingFile) ?? ExistingFileChoice.skip.rawValue

@@ -79,6 +79,7 @@ struct ContentView: View {
                 HStack {
                     Image(systemName: "info.circle")
                     Text(banner)
+                        .accessibilityIdentifier("intakeBanner")
                     Spacer()
                     Button("Dismiss") { model.dismissBanner(at: index) }
                         .buttonStyle(.link)

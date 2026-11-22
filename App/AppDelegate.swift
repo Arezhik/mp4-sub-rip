@@ -34,6 +34,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private static let inbox = Inbox()
 
+    /// UI tests must not restore a previous window or panel.
+    func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
+        !UITestingLaunch.isActive
+    }
+
     /// Set once `applicationDidFinishLaunching` has run. Tool detection waits
     /// for this: a check started inside `AppModel.init` reported ffmpeg missing
     /// on 2026-11-09 while the later debug-log header found it.

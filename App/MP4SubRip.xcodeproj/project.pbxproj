@@ -11,6 +11,7 @@
 		4148A100B04AA2A23CD3C680 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE613AFBC70440AE80065227 /* SettingsView.swift */; };
 		46D82E39AC672F759807363E /* WindowEvents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EDF7F1C67101F6E78909643 /* WindowEvents.swift */; };
 		5CAF3DDAF0D89312A4B449FE /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05B82AD68FAC7C6DB19DF330 /* AppDelegate.swift */; };
+		5E150D6CF09B76D39A86E072 /* UITestingLaunch.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACE73ACD94D5B8833412F665 /* UITestingLaunch.swift */; };
 		7255EE65D5F132DDCCBF73CE /* MP4SubRipApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC68C7D2A959F4F949F46154 /* MP4SubRipApp.swift */; };
 		7D927AB6FC643565185F9620 /* HelloWorldUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9072CB7B9DFDDDCE2D25745 /* HelloWorldUITests.swift */; };
 		B03720F58E12F0BD5004D6C8 /* DebugLogSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9456220548F18AF182996979 /* DebugLogSupport.swift */; };
@@ -38,6 +39,7 @@
 		939F0297BED8320C0C920EF9 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		9456220548F18AF182996979 /* DebugLogSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugLogSupport.swift; sourceTree = "<group>"; };
 		AC68C7D2A959F4F949F46154 /* MP4SubRipApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MP4SubRipApp.swift; sourceTree = "<group>"; };
+		ACE73ACD94D5B8833412F665 /* UITestingLaunch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UITestingLaunch.swift; sourceTree = "<group>"; };
 		AE613AFBC70440AE80065227 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		D397C16711F3A92675B5A372 /* MP4SubRipUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MP4SubRipUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		DD3201D66A14852813FE4FC6 /* mp4-sub-rip */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "mp4-sub-rip"; path = ..; sourceTree = SOURCE_ROOT; };
@@ -103,6 +105,7 @@
 				939F0297BED8320C0C920EF9 /* Info.plist */,
 				AC68C7D2A959F4F949F46154 /* MP4SubRipApp.swift */,
 				AE613AFBC70440AE80065227 /* SettingsView.swift */,
+				ACE73ACD94D5B8833412F665 /* UITestingLaunch.swift */,
 				1EDF7F1C67101F6E78909643 /* WindowEvents.swift */,
 			);
 			name = App;
@@ -213,6 +216,7 @@
 				B03720F58E12F0BD5004D6C8 /* DebugLogSupport.swift in Sources */,
 				7255EE65D5F132DDCCBF73CE /* MP4SubRipApp.swift in Sources */,
 				4148A100B04AA2A23CD3C680 /* SettingsView.swift in Sources */,
+				5E150D6CF09B76D39A86E072 /* UITestingLaunch.swift in Sources */,
 				46D82E39AC672F759807363E /* WindowEvents.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
