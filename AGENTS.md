@@ -30,6 +30,7 @@
 - Apply these rules only when `command -v swift` finds nothing (or when xcodegen exists at `/workspace/macos-dev-test/projects/mkv-forge/icon/tools/XcodeGen-2.48.0/.build/x86_64-unknown-linux-gnu/release/xcodegen`). Everywhere else the rules above apply unchanged.
 - Edit source files directly in the working tree. Don't generate `apply_changes.py` or `verify.diff`.
 - Run `./scripts/verify-linux.sh`. It regenerates the Xcode project with XcodeGen when Swift is absent and `App/project.yml` exists (via a temp copy named `mp4-sub-rip` if this clone folder isn't), then runs this repo's non-Swift check script: `scripts/bump-version.sh --check`. A second run must change nothing. That is the only non-Swift check besides this wrapper (`scripts/` also has `bump-version.sh`; the Linux CI job's other steps are `swift test -Xswiftc -strict-concurrency=complete -Xswiftc -warnings-as-errors` and `swift build -Xswiftc -strict-concurrency=complete -Xswiftc -warnings-as-errors`). Inspect `git diff` so only intended changes are staged. Don't run `swift test`, `swift build`, or `xcodebuild` here; they run in GitHub CI after push.
+- To add a new Core type and its test, run `./scripts/scaffold-swift.sh <Name> [Subfolder]` first instead of creating the files by hand.
 - Push to a feature branch `grok/<slug>`, then open a PR with `gh pr create --fill` (or `--draft` for work in progress) because CI runs on pull requests. Check CI with `gh pr checks` or `gh run list` only if `gh auth status` succeeds. No version bump, no CHANGELOG change.
 
 ## This project
