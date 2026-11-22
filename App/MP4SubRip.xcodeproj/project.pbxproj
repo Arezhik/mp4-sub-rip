@@ -12,11 +12,22 @@
 		46D82E39AC672F759807363E /* WindowEvents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EDF7F1C67101F6E78909643 /* WindowEvents.swift */; };
 		5CAF3DDAF0D89312A4B449FE /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05B82AD68FAC7C6DB19DF330 /* AppDelegate.swift */; };
 		7255EE65D5F132DDCCBF73CE /* MP4SubRipApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC68C7D2A959F4F949F46154 /* MP4SubRipApp.swift */; };
+		7D927AB6FC643565185F9620 /* HelloWorldUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9072CB7B9DFDDDCE2D25745 /* HelloWorldUITests.swift */; };
 		B03720F58E12F0BD5004D6C8 /* DebugLogSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9456220548F18AF182996979 /* DebugLogSupport.swift */; };
 		E71559FD6EAD6E845D9AE183 /* MP4SubRipCore in Frameworks */ = {isa = PBXBuildFile; productRef = 5C6A8FC626F65C192C9CD94E /* MP4SubRipCore */; };
 		EB1B02E406225B1E2713C383 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24255DE297AE82DC80E922F2 /* AppModel.swift */; };
 		F1848E6E5715D6AEABE5F7C1 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 084F56A8F03FBA28B2193E86 /* ContentView.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		0B9461C19E584347696022B6 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 9C274438DF6D7F6C8ECFBE51 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D455369314C76E273DE2AF1A;
+			remoteInfo = MP4SubRip;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		05B82AD68FAC7C6DB19DF330 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
@@ -28,8 +39,10 @@
 		9456220548F18AF182996979 /* DebugLogSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugLogSupport.swift; sourceTree = "<group>"; };
 		AC68C7D2A959F4F949F46154 /* MP4SubRipApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MP4SubRipApp.swift; sourceTree = "<group>"; };
 		AE613AFBC70440AE80065227 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		D397C16711F3A92675B5A372 /* MP4SubRipUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MP4SubRipUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		DD3201D66A14852813FE4FC6 /* mp4-sub-rip */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "mp4-sub-rip"; path = ..; sourceTree = SOURCE_ROOT; };
 		F57E97EF02F83C7F69DF0E36 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		F9072CB7B9DFDDDCE2D25745 /* HelloWorldUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelloWorldUITests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -44,11 +57,20 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		819B84B5C73FDB6D771DEAA7 /* MP4UITests */ = {
+			isa = PBXGroup;
+			children = (
+				F9072CB7B9DFDDDCE2D25745 /* HelloWorldUITests.swift */,
+			);
+			path = MP4UITests;
+			sourceTree = "<group>";
+		};
 		B0BC927F646F78D50697A6B7 = {
 			isa = PBXGroup;
 			children = (
 				F57E97EF02F83C7F69DF0E36 /* Assets.xcassets */,
 				F2F6225FF1ECB95A2811DF7C /* App */,
+				819B84B5C73FDB6D771DEAA7 /* MP4UITests */,
 				C7E88DBCFD938053340D6E94 /* Packages */,
 				EC53722C3B43BF791D788560 /* Products */,
 			);
@@ -66,6 +88,7 @@
 			isa = PBXGroup;
 			children = (
 				6C0E9A2495EBDFF179D9B5D3 /* MP4SubRip.app */,
+				D397C16711F3A92675B5A372 /* MP4SubRipUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -109,6 +132,24 @@
 			productReference = 6C0E9A2495EBDFF179D9B5D3 /* MP4SubRip.app */;
 			productType = "com.apple.product-type.application";
 		};
+		F054105F73EBC5E8218AA7CA /* MP4SubRipUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1A246603AA535BFC4A472100 /* Build configuration list for PBXNativeTarget "MP4SubRipUITests" */;
+			buildPhases = (
+				D4321D246BD4A2A7D3A15576 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				506689F83296B4F2CA1E9315 /* PBXTargetDependency */,
+			);
+			name = MP4SubRipUITests;
+			packageProductDependencies = (
+			);
+			productName = MP4SubRipUITests;
+			productReference = D397C16711F3A92675B5A372 /* MP4SubRipUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -120,6 +161,10 @@
 				TargetAttributes = {
 					D455369314C76E273DE2AF1A = {
 						ProvisioningStyle = Manual;
+					};
+					F054105F73EBC5E8218AA7CA = {
+						ProvisioningStyle = Manual;
+						TestTargetID = D455369314C76E273DE2AF1A;
 					};
 				};
 			};
@@ -141,6 +186,7 @@
 			projectRoot = "";
 			targets = (
 				D455369314C76E273DE2AF1A /* MP4SubRip */,
+				F054105F73EBC5E8218AA7CA /* MP4SubRipUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -171,7 +217,23 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D4321D246BD4A2A7D3A15576 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7D927AB6FC643565185F9620 /* HelloWorldUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		506689F83296B4F2CA1E9315 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = D455369314C76E273DE2AF1A /* MP4SubRip */;
+			targetProxy = 0B9461C19E584347696022B6 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		0AD4B45E46CBC93644D51B7E /* Release */ = {
@@ -304,6 +366,46 @@
 			};
 			name = Debug;
 		};
+		8F4EA0EF81F5086F025472F5 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.arezhik.MP4SubRipUITests;
+				SDKROOT = macosx;
+				TEST_TARGET_NAME = MP4SubRip;
+			};
+			name = Release;
+		};
+		AA84904DE1D26909CD3B99C6 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.arezhik.MP4SubRipUITests;
+				SDKROOT = macosx;
+				TEST_TARGET_NAME = MP4SubRip;
+			};
+			name = Debug;
+		};
 		CBE6256D9315715B28054E2C /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -367,6 +469,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		1A246603AA535BFC4A472100 /* Build configuration list for PBXNativeTarget "MP4SubRipUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA84904DE1D26909CD3B99C6 /* Debug */,
+				8F4EA0EF81F5086F025472F5 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		43DF0EA8C17778108C18B7B9 /* Build configuration list for PBXProject "MP4SubRip" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
