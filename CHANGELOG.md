@@ -6,7 +6,7 @@ Every merged PR that changes the shipped app bumps the version in the same PR wi
 
 ## [Unreleased]
 
-## [0.7.0] - 2026-11-11 (build 8)
+## [0.7.0] - 2026-11-25 (build 9)
 ### Added
 - Files are probed when they join the queue, so language, closed-caption, and image-subtitle chips show before Extract. A file with no text subtitles, or only image subtitles, is marked right away and is not started (#7).
 - Save to, under the queue, writes every .srt into a chosen folder and remembers the last three folders. It is disabled while extracting (#9).
