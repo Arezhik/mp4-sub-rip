@@ -46,6 +46,9 @@ struct AppCommands: Commands {
         CommandGroup(after: .newItem) {
             Button("Add Files") { model.showOpenPanel() }
                 .keyboardShortcut("o")
+            Button("Choose Output Folder…") { model.chooseOutputFolder() }
+                .keyboardShortcut("o", modifiers: [.command, .shift])
+                .disabled(state.flags.isRunning)
             if state.flags.isRunning {
                 Button("Stop") { model.stopExtraction() }
                     .keyboardShortcut(".")
@@ -56,9 +59,29 @@ struct AppCommands: Commands {
             }
             Button("Cancel All") { model.cancelAll() }
                 .disabled(!state.flags.isRunning)
-            Button("Clear Finished") { model.clearFinished() }
-                .keyboardShortcut(.delete, modifiers: .command)
-                .disabled(!state.flags.canClearFinished)
+            Button("Clear Processed") { model.clearProcessed(includingFailed: false) }
+                .keyboardShortcut("k", modifiers: [.command, .shift])
+                .disabled(!state.flags.canClearProcessed)
+            Button("Clear All Finished") { model.clearProcessed(includingFailed: true) }
+                .keyboardShortcut(.delete, modifiers: [.command, .option])
+                .disabled(!state.flags.canClearAllFinished)
+        }
+
+        CommandMenu("Queue") {
+            Button("Retry") { model.retrySelection() }
+                .disabled(!state.flags.canRetry)
+            Button("Reveal in Finder") { model.revealSelection() }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
+                .disabled(!state.flags.canReveal)
+            Button("Show Video in Finder") { model.showVideoSelection() }
+                .disabled(!state.flags.canShowVideo)
+            Button("Open Subtitle") { model.openSubtitleSelection() }
+                .disabled(!state.flags.canOpenSubtitle)
+            Button("Show Error…") { model.showErrorSelection() }
+                .disabled(!state.flags.canShowError)
+            Divider()
+            Button("Remove from Queue") { model.removeSelection() }
+                .disabled(!state.flags.canRemoveSelection)
         }
 
         CommandGroup(replacing: .help) {

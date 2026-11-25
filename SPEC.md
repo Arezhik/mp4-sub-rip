@@ -9,8 +9,9 @@ One or two sentences: who it's for and what it does.
 - Platform: macOS 14.0+, universal (arm64 + x86_64), SwiftUI, unsigned CI build.
 - Bundle ID: `com.arezhik.MP4SubRip` (don't change it after testers install the app).
 - Input: .mp4 files and folders, from the window, Add Files (⌘O), the Dock, and Open With. Adding a file queues it. Extract Subtitles runs the queue.
-- Output: next to the input by default, or a chosen folder. Not sandboxed.
-- Existing output file: Skip (default), Overwrite, or Add a number, from Settings. The engine applies that choice. Asking once per batch with "Apply to all" is still queue UI.
+- Output: next to the input by default, or a folder chosen from the Save to bar or Settings. Up to 3 recent folders are remembered, with a security-scoped bookmark. Save to is disabled during a run. Not sandboxed.
+- Existing output file: Skip (default), Overwrite, or Add a number, from Settings. The engine applies that choice to the whole run. There is no per-file prompt and no Apply-to-all sheet.
+- Queue: adding a file probes tracks off the main thread, and the table shows language chips, status, and the output name before Extract. A file with nothing to extract is marked immediately and is not started. Clear Processed keeps failed rows; Clear All Finished (Option) removes them too. Pending rows can be removed during a run. The extracting row cannot.
 - External tools: ffmpeg for discrete EIA-608 (`c608`) only. AVFoundation reads tx3g. ffmpeg is located (Homebrew, then `/usr/local/bin`, then an app bundle, then `PATH`) and its path and version are logged at launch. Settings can find ffmpeg automatically or use a chosen copy. A chosen path is used alone; if it is missing, the app does not fall back. The launch log and the debug-log header say whether that copy was automatic or chosen in Settings. `SubtitleMediaReading` routes `c608` to `ffmpeg -map 0:s:N -c:s srt`. The first `{\anN}` in a cue is removed, a later one becomes a line break, overlapping cues are flattened onto one timeline, and a last cue under one second is lengthened.
 - Subtitles: tx3g / mov_text, and discrete EIA-608 (`c608`). CEA-708 (`c708`), captions that exist only in the video bitstream, bitmap, WebVTT-in-MP4, DRM, and any other codec are reported with a typed reason and not extracted.
 - Design source: <Design Bot spec and mockups path>.
@@ -29,6 +30,9 @@ One or two sentences: who it's for and what it does.
 - [ ] The universal app builds in CI and the zip artifact launches on Apple silicon and Intel.
 - [ ] Every item in docs/PR_TEST_CHECKLIST.md passes on Arezhik's Mac.
 - [ ] Help → Export Debug Log shows the launch, each file's start and finish, errors, and tool versions.
+
+## Phase 2 (0.7.0)
+Probe on add, the existing-file status, Save to with recent folders, and queue housekeeping (remove, Clear Processed, Retry, Reveal). Parallel mode, overall progress, and the finish summary stay in Phase 3. The Apply-to-all conflict sheet stays parked.
 
 ## Later phases
 Nice-to-haves go here, or become low-priority `enhancement` issues. They don't go into the current PR.

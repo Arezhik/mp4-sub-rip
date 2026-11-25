@@ -1,57 +1,99 @@
 import Foundation
 
-// The queue rules Arezhik settled on in PGS2SRT issue #8:
-// - Clear Finished removes done, failed, skipped, and canceled rows. It is enabled
-//   or dimmed, never hidden, and it never asks for confirmation.
-// - The hover ✕ appears only on those same rows. During a run, Pending and Extracting rows use Cancel.
+// Queue rules for Phase 2 (issues #7–#10):
+// - Clear Processed removes done, skipped-exists, no-subtitles, image-only,
+//   other skipped, and canceled rows. Failed rows stay so they can be retried.
+//   Clear All Finished also removes Failed. Both are disabled during a run,
+//   enabled or dimmed otherwise, and never ask for confirmation.
+// - The row ✕ removes any row that is not extracting, including Pending and
+//   Waiting during a run. The extracting row has no ✕ (Stop first).
 // - Removing a row never deletes the output file on disk.
 // - An empty queue goes back to the drop screen.
+// - Existing .srt files follow Settings (Skip / Overwrite / Add a number).
+//   There is no per-file prompt.
 
 /// Where one queued file is.
 public enum JobStatus: Equatable, Sendable {
+    /// Tracks are being read. Not chosen by Extract.
+    case probing
     case waiting
-    /// `completed` of `total` units, such as pictures or tracks. `total` 0 means unknown.
+    /// `completed` of `total` units, such as cues or tracks. `total` 0 means unknown.
     case working(completed: Int, total: Int)
-    case done(outputPath: String)
+    /// At least one SRT was written. `skippedExists` names files left untouched.
+    case done(written: [String], skippedExists: [String])
+    /// Every planned SRT was already on disk. Nothing was written.
+    case skippedExists(paths: [String])
+    case noSubtitles
+    case imageSubsOnly
     case failed(reason: String)
     case skipped(reason: String)
     case canceled
 
-    /// Waiting or working. Cancel applies. Clear Finished does not.
+    /// Waiting or extracting. Clear Processed does not apply.
     public var isActive: Bool {
         switch self {
         case .waiting, .working: return true
-        case .done, .failed, .skipped, .canceled: return false
+        case .probing, .done, .skippedExists, .noSubtitles, .imageSubsOnly, .failed, .skipped, .canceled:
+            return false
         }
     }
 
-    /// A file the engine is reading right now.
+    /// A file the engine is reading right now. This row cannot be removed.
     public var isWorking: Bool {
         if case .working = self { return true }
         return false
     }
 
-    /// Clear Finished and the row ✕ apply.
-    public var isRemovable: Bool { !isActive }
+    /// Row ✕, Delete, and Remove from Queue. Pending rows can go during a run.
+    public var canRemove: Bool { !isWorking }
 
-    /// The one line shown on the row. Words match the design spec:
-    /// Pending, Extracting, Done, Failed, Cancelled, Skipped.
-    public var summary: String {
+    /// Clear Processed. Failed rows are kept.
+    public var clearsWithProcessed: Bool {
         switch self {
-        case .waiting:
-            return "Pending"
-        case .working:
-            return "Extracting"
-        case let .done(outputPath):
-            let name = (outputPath as NSString).lastPathComponent
-            return name.isEmpty ? "Done" : "Done · \(name)"
-        case let .failed(reason):
-            return "Failed · \(reason)"
-        case let .skipped(reason):
-            return "Skipped · \(reason)"
-        case .canceled:
-            return "Cancelled"
+        case .done, .skippedExists, .noSubtitles, .imageSubsOnly, .skipped, .canceled:
+            return true
+        case .probing, .waiting, .working, .failed:
+            return false
         }
+    }
+
+    /// Clear All Finished. Failed rows go too. Pending and extracting stay.
+    public var clearsWithAllFinished: Bool {
+        if case .failed = self { return true }
+        return clearsWithProcessed
+    }
+
+    /// Retry on Failed, and on Cancelled when that state is used.
+    public var canRetry: Bool {
+        switch self {
+        case .failed, .canceled: return true
+        default: return false
+        }
+    }
+
+    /// Paths Reveal and Open Subtitle can use. Empty until something was written or skipped because it existed.
+    public var outputPaths: [String] {
+        switch self {
+        case let .done(written, skipped):
+            return written + skipped
+        case let .skippedExists(paths):
+            return paths
+        default:
+            return []
+        }
+    }
+
+    /// 0...100 while extracting with a known total. Nil when the total is unknown.
+    public var progressPercent: Int? {
+        guard case let .working(completed, total) = self, total > 0 else { return nil }
+        let raw = Int((Double(completed) / Double(total) * 100).rounded())
+        return min(100, max(0, raw))
+    }
+
+    /// The one line shown on the row when nothing is running.
+    /// Waiting rows say "Waiting…" only while a run is active; see `QueueRowText`.
+    public var summary: String {
+        QueueRowText.summary(self, runIsActive: false)
     }
 
     /// The engine's full reason, for a tooltip or Show Error….
@@ -67,7 +109,7 @@ public enum JobStatus: Equatable, Sendable {
         }
     }
 
-    /// Failed rows offer Show Error…. Skipped rows keep the gray status line and a tooltip.
+    /// Failed rows offer Show Error…. Other rows keep a tooltip when they have one.
     public var offersErrorDetail: Bool {
         if case .failed = self { return true }
         return false
@@ -86,11 +128,23 @@ public struct QueueItem: Identifiable, Equatable, Sendable {
     public let id: UUID
     public var path: String
     public var status: JobStatus
+    /// Filled when probe finishes. Empty while tracks are still loading.
+    public var tracks: [SubtitleTrack]
+    /// Extra sentence for a settled row, such as why a closed-caption track was not extracted.
+    public var statusNote: String?
 
-    public init(id: UUID = UUID(), path: String, status: JobStatus = .waiting) {
+    public init(
+        id: UUID = UUID(),
+        path: String,
+        status: JobStatus = .waiting,
+        tracks: [SubtitleTrack] = [],
+        statusNote: String? = nil
+    ) {
         self.id = id
         self.path = path
         self.status = status
+        self.tracks = tracks
+        self.statusNote = statusNote
     }
 
     public var fileName: String { (path as NSString).lastPathComponent }
@@ -100,37 +154,68 @@ public struct QueueItem: Identifiable, Equatable, Sendable {
 /// of them changes, so open menus do not rebuild on every progress tick (PGS2SRT #35).
 public struct CommandFlags: Equatable, Sendable {
     public var hasActiveWork: Bool
-    public var canClearFinished: Bool
+    public var canClearProcessed: Bool
+    public var canClearAllFinished: Bool
     /// Idle, and at least one row is Pending. Extract Subtitles uses this.
     public var canExtract: Bool
     /// Extract was pressed and the run has not stopped or finished.
     public var isRunning: Bool
+    public var canRetry: Bool
+    public var canReveal: Bool
+    public var canShowVideo: Bool
+    public var canOpenSubtitle: Bool
+    public var canShowError: Bool
+    public var canRemoveSelection: Bool
 
     public init(
         hasActiveWork: Bool = false,
-        canClearFinished: Bool = false,
+        canClearProcessed: Bool = false,
+        canClearAllFinished: Bool = false,
         canExtract: Bool = false,
-        isRunning: Bool = false
+        isRunning: Bool = false,
+        canRetry: Bool = false,
+        canReveal: Bool = false,
+        canShowVideo: Bool = false,
+        canOpenSubtitle: Bool = false,
+        canShowError: Bool = false,
+        canRemoveSelection: Bool = false
     ) {
         self.hasActiveWork = hasActiveWork
-        self.canClearFinished = canClearFinished
+        self.canClearProcessed = canClearProcessed
+        self.canClearAllFinished = canClearAllFinished
         self.canExtract = canExtract
         self.isRunning = isRunning
+        self.canRetry = canRetry
+        self.canReveal = canReveal
+        self.canShowVideo = canShowVideo
+        self.canOpenSubtitle = canOpenSubtitle
+        self.canShowError = canShowError
+        self.canRemoveSelection = canRemoveSelection
     }
 
     /// `isRunning` is the Extract/Stop latch, not "any row looks active".
     /// `hasLiveTask` keeps Extract disabled while a cancelled file is still
-    /// deleting its partial output.
+    /// deleting its partial output. Probe tasks must not be passed as `hasLiveTask`.
+    /// Clear stays disabled for the whole run. Selection flags follow the selected rows.
     public static func from(
         _ items: [QueueItem],
         isRunning: Bool = false,
-        hasLiveTask: Bool = false
+        hasLiveTask: Bool = false,
+        selection: Set<UUID> = []
     ) -> CommandFlags {
-        CommandFlags(
+        let actions = RowActionSet.forSelection(items, ids: selection)
+        return CommandFlags(
             hasActiveWork: items.contains { $0.status.isActive },
-            canClearFinished: items.contains { $0.status.isRemovable },
+            canClearProcessed: !isRunning && items.contains { $0.status.clearsWithProcessed },
+            canClearAllFinished: !isRunning && items.contains { $0.status.clearsWithAllFinished },
             canExtract: !isRunning && !hasLiveTask && items.contains { $0.status == .waiting },
-            isRunning: isRunning
+            isRunning: isRunning,
+            canRetry: actions.retry,
+            canReveal: actions.reveal,
+            canShowVideo: actions.showVideo,
+            canOpenSubtitle: actions.openSubtitle,
+            canShowError: actions.showError,
+            canRemoveSelection: actions.remove
         )
     }
 }
@@ -168,6 +253,20 @@ public enum QueueList {
         }
         return QueueAddition(items: items, duplicateIDs: duplicateIDs, addedCount: addedCount)
     }
+
+    /// Rows that were not already in the queue start out as "Reading tracks…".
+    public static func markingNewRowsForProbe(
+        _ items: [QueueItem],
+        existingIDs: Set<UUID>
+    ) -> (items: [QueueItem], probeIDs: [UUID]) {
+        var items = items
+        var probeIDs: [UUID] = []
+        for index in items.indices where !existingIDs.contains(items[index].id) {
+            items[index].status = .probing
+            probeIDs.append(items[index].id)
+        }
+        return (items, probeIDs)
+    }
 }
 
 /// Which row Extract runs next, and what Stop or Cancel does to the list.
@@ -175,7 +274,7 @@ public enum QueueList {
 /// updates rows.
 public enum QueueRunRules {
     /// The next Pending row. `held` rows were cancelled during this run and
-    /// wait for the next Extract. Done, Failed, and Skipped rows are not chosen.
+    /// wait for the next Extract. Probing, failed, and already-settled rows are not chosen.
     public static func nextPending(in items: [QueueItem], held: Set<UUID>) -> UUID? {
         items.first { $0.status == .waiting && !held.contains($0.id) }?.id
     }

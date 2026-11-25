@@ -2,25 +2,34 @@ import XCTest
 @testable import MP4SubRipCore
 
 final class QueueRulesTests: XCTestCase {
-    func testOnlyFinishedRowsAreRemovable() {
-        XCTAssertFalse(JobStatus.waiting.isRemovable)
-        XCTAssertFalse(JobStatus.working(completed: 1, total: 3).isRemovable)
-        XCTAssertTrue(JobStatus.done(outputPath: "/a").isRemovable)
-        XCTAssertTrue(JobStatus.failed(reason: "x").isRemovable)
-        XCTAssertTrue(JobStatus.skipped(reason: "x").isRemovable)
-        XCTAssertTrue(JobStatus.canceled.isRemovable)
+    func testRemoveAndClearSplitFailedFromProcessed() {
+        XCTAssertTrue(JobStatus.waiting.canRemove)
+        XCTAssertTrue(JobStatus.probing.canRemove)
+        XCTAssertFalse(JobStatus.working(completed: 1, total: 3).canRemove)
+        XCTAssertTrue(JobStatus.done(written: ["/a"], skippedExists: []).canRemove)
+        XCTAssertTrue(JobStatus.failed(reason: "x").canRemove)
+        XCTAssertFalse(JobStatus.failed(reason: "x").clearsWithProcessed)
+        XCTAssertTrue(JobStatus.failed(reason: "x").clearsWithAllFinished)
+        XCTAssertTrue(JobStatus.noSubtitles.clearsWithProcessed)
+        XCTAssertTrue(JobStatus.imageSubsOnly.clearsWithProcessed)
+        XCTAssertTrue(JobStatus.skippedExists(paths: ["/a"]).clearsWithProcessed)
+        XCTAssertFalse(JobStatus.probing.clearsWithProcessed)
+        XCTAssertFalse(JobStatus.waiting.clearsWithProcessed)
     }
 
     func testCommandFlagsFollowTheRows() {
-        XCTAssertEqual(CommandFlags.from([]), CommandFlags(hasActiveWork: false, canClearFinished: false))
+        XCTAssertEqual(CommandFlags.from([]), CommandFlags())
         let items = [QueueItem(path: "/a", status: .working(completed: 0, total: 0)), QueueItem(path: "/b", status: .canceled)]
-        XCTAssertEqual(CommandFlags.from(items), CommandFlags(hasActiveWork: true, canClearFinished: true))
+        XCTAssertEqual(
+            CommandFlags.from(items),
+            CommandFlags(hasActiveWork: true, canClearProcessed: true, canClearAllFinished: true)
+        )
     }
 
     func testProgressTickIsWorkingToWorkingOnly() {
         let working = JobStatus.working(completed: 1, total: 10)
         XCTAssertTrue(working.isProgressTick(to: .working(completed: 2, total: 10)))
-        XCTAssertFalse(working.isProgressTick(to: .done(outputPath: "/a")))
+        XCTAssertFalse(working.isProgressTick(to: .done(written: ["/a"], skippedExists: [])))
         XCTAssertFalse(JobStatus.waiting.isProgressTick(to: working))
     }
 
@@ -42,7 +51,14 @@ final class QueueRulesTests: XCTestCase {
     func testStatusWordsMatchTheSpec() {
         XCTAssertEqual(JobStatus.waiting.summary, "Pending")
         XCTAssertEqual(JobStatus.working(completed: 1, total: 4).summary, "Extracting")
-        XCTAssertEqual(JobStatus.done(outputPath: "/tmp/Movie.srt").summary, "Done · Movie.srt")
+        XCTAssertEqual(JobStatus.probing.summary, "Reading tracks…")
+        XCTAssertEqual(JobStatus.done(written: ["/tmp/Movie.srt"], skippedExists: []).summary, "Done · 1 file")
+        XCTAssertEqual(JobStatus.done(written: ["/tmp/A.srt", "/tmp/B.srt"], skippedExists: []).summary, "Done · 2 files")
+        XCTAssertEqual(JobStatus.skippedExists(paths: ["/tmp/Movie.srt"]).summary, "Done · skipped (exists)")
+        XCTAssertEqual(JobStatus.noSubtitles.summary, "No subtitles")
+        XCTAssertEqual(JobStatus.imageSubsOnly.summary, "Image subs only")
+        XCTAssertEqual(QueueRowText.summary(.waiting, runIsActive: true), "Waiting…")
+        XCTAssertEqual(JobStatus.working(completed: 64, total: 100).progressPercent, 64)
         XCTAssertEqual(JobStatus.canceled.summary, "Cancelled")
         XCTAssertFalse(JobStatus.waiting.offersErrorDetail)
         XCTAssertFalse(JobStatus.skipped(reason: "x").offersErrorDetail)
@@ -52,14 +68,14 @@ final class QueueRulesTests: XCTestCase {
     func testFailureAndSkipLinesUseEngineStrings() {
         let missing = SubtitleExtractionError.fileNotFound.errorDescription
         XCTAssertEqual(missing, "File not found.")
-        XCTAssertEqual(JobStatus.failed(reason: missing ?? "").summary, "Failed · File not found.")
+        XCTAssertEqual(JobStatus.failed(reason: missing ?? "").summary, "Failed · File not found")
         XCTAssertEqual(JobStatus.failed(reason: missing ?? "").detail, "File not found.")
         let bitmap = SubtitleSkipReason.bitmap.message
         XCTAssertEqual(bitmap, "Image-based subtitles (needs OCR).")
         XCTAssertEqual(JobStatus.skipped(reason: bitmap).summary, "Skipped · \(bitmap)")
         XCTAssertEqual(JobStatus.skipped(reason: bitmap).detail, bitmap)
         let readOnly = SubtitleExtractionError.outputNotWritable.errorDescription
-        XCTAssertEqual(JobStatus.failed(reason: readOnly ?? "").summary, "Failed · Folder is read-only.")
+        XCTAssertEqual(JobStatus.failed(reason: readOnly ?? "").summary, "Failed · Read-only folder")
     }
 
     func testAddingAPathTwiceDoesNotCreateASecondRow() {
@@ -74,7 +90,7 @@ final class QueueRulesTests: XCTestCase {
     }
 
     func testAFinishedFileIsNotAddedAgain() {
-        let done = QueueItem(path: "/m/a.mp4", status: .done(outputPath: "/m/a.srt"))
+        let done = QueueItem(path: "/m/a.mp4", status: .done(written: ["/m/a.srt"], skippedExists: []))
         let failed = QueueItem(path: "/m/b.mp4", status: .failed(reason: "File not found."))
         let addition = QueueList.adding(["/m/a.mp4", "/m/b.mp4", "/m/c.mp4"], to: [done, failed])
         XCTAssertEqual(addition.addedCount, 1)
@@ -87,7 +103,7 @@ final class QueueRulesTests: XCTestCase {
     func testStopReturnsTheExtractingRowToPending() {
         let working = QueueItem(path: "/m/a.mp4", status: .working(completed: 1, total: 4))
         let pending = QueueItem(path: "/m/b.mp4", status: .waiting)
-        let done = QueueItem(path: "/m/c.mp4", status: .done(outputPath: "/m/c.srt"))
+        let done = QueueItem(path: "/m/c.mp4", status: .done(written: ["/m/c.srt"], skippedExists: []))
         let failed = QueueItem(path: "/m/d.mp4", status: .failed(reason: "File not found."))
         let skipped = QueueItem(path: "/m/e.mp4", status: .skipped(reason: SubtitleSkipReason.bitmap.message))
         let stopped = QueueRunRules.stopped([working, pending, done, failed, skipped])
@@ -116,7 +132,7 @@ final class QueueRulesTests: XCTestCase {
     func testNextExtractSkipsFinishedRows() {
         let pending = UUID()
         let items = [
-            QueueItem(path: "/m/a.mp4", status: .done(outputPath: "/m/a.srt")),
+            QueueItem(path: "/m/a.mp4", status: .done(written: ["/m/a.srt"], skippedExists: [])),
             QueueItem(path: "/m/b.mp4", status: .failed(reason: "File not found.")),
             QueueItem(path: "/m/c.mp4", status: .skipped(reason: SubtitleSkipReason.bitmap.message)),
             QueueItem(id: pending, path: "/m/d.mp4", status: .waiting),
@@ -130,11 +146,11 @@ final class QueueRulesTests: XCTestCase {
         let pending = [QueueItem(path: "/a", status: .waiting)]
         XCTAssertEqual(
             CommandFlags.from(pending, isRunning: false),
-            CommandFlags(hasActiveWork: true, canClearFinished: false, canExtract: true, isRunning: false)
+            CommandFlags(hasActiveWork: true, canExtract: true, isRunning: false)
         )
         XCTAssertFalse(CommandFlags.from(pending, isRunning: true).canExtract)
         XCTAssertFalse(CommandFlags.from(pending, isRunning: false, hasLiveTask: true).canExtract)
-        let done = [QueueItem(path: "/a", status: .done(outputPath: "/a.srt"))]
+        let done = [QueueItem(path: "/a", status: .done(written: ["/a.srt"], skippedExists: []))]
         XCTAssertFalse(CommandFlags.from(done).canExtract)
         XCTAssertFalse(CommandFlags.from(done).isRunning)
     }
@@ -149,5 +165,40 @@ final class QueueRulesTests: XCTestCase {
         let cleaned = CommandFlags.from(pending, isRunning: false, hasLiveTask: false)
         XCTAssertFalse(cleaned.isRunning)
         XCTAssertTrue(cleaned.canExtract)
+    }
+
+    func testNextExtractSkipsRowsSettledByProbe() {
+        let pending = UUID()
+        let items = [
+            QueueItem(path: "/m/a.mp4", status: .probing),
+            QueueItem(path: "/m/b.mp4", status: .noSubtitles),
+            QueueItem(path: "/m/c.mp4", status: .imageSubsOnly),
+            QueueItem(path: "/m/d.mp4", status: .skippedExists(paths: ["/m/d.srt"])),
+            QueueItem(id: pending, path: "/m/e.mp4", status: .waiting)
+        ]
+        XCTAssertEqual(QueueRunRules.nextPending(in: items, held: []), pending)
+    }
+
+    func testClearProcessedKeepsFailedAndARunDisablesClear() {
+        let done = QueueItem(path: "/a", status: .done(written: ["/a.srt"], skippedExists: []))
+        let failed = QueueItem(path: "/b", status: .failed(reason: "Folder is read-only."))
+        let pending = QueueItem(path: "/c", status: .waiting)
+        let items = [done, failed, pending]
+        XCTAssertEqual(QueueHousekeeping.clearing(items, includingFailed: false).map(\.path), ["/b", "/c"])
+        XCTAssertEqual(QueueHousekeeping.clearing(items, includingFailed: true).map(\.path), ["/c"])
+        XCTAssertFalse(CommandFlags.from(items, isRunning: true).canClearProcessed)
+        XCTAssertFalse(CommandFlags.from(items, isRunning: true).canClearAllFinished)
+        XCTAssertTrue(CommandFlags.from([failed]).canClearAllFinished)
+        XCTAssertFalse(CommandFlags.from([failed]).canClearProcessed)
+    }
+
+    func testNewRowsAreMarkedForProbe() {
+        let existing = QueueItem(path: "/old.mp4", status: .done(written: ["/old.srt"], skippedExists: []))
+        let addition = QueueList.adding(["/old.mp4", "/new.mp4"], to: [existing])
+        let marked = QueueList.markingNewRowsForProbe(addition.items, existingIDs: [existing.id])
+        XCTAssertEqual(marked.probeIDs.count, 1)
+        XCTAssertEqual(marked.items[0].status, existing.status)
+        XCTAssertEqual(marked.items[1].status, .probing)
+        XCTAssertEqual(marked.items[1].id, marked.probeIDs[0])
     }
 }

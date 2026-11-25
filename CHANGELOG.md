@@ -6,6 +6,15 @@ Every merged PR that changes the shipped app bumps the version in the same PR wi
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-25 (build 9)
+### Added
+- Files are probed when they join the queue, so language, closed-caption, and image-subtitle chips show before Extract. A file with no text subtitles, or only image subtitles, is marked right away and is not started (#7).
+- Save to, under the queue, writes every .srt into a chosen folder and remembers the last three folders. It is disabled while extracting (#9).
+- Failed rows can be retried. Clear Processed leaves failures in the list; hold Option, or choose Clear All Finished, to remove them too. Rows can be removed, revealed, and opened from the table (#10).
+
+### Changed
+- When the .srt is already there and Skip is selected, the row says Done · skipped (exists). Overwrite and Add a number are unchanged, and nothing asks in the middle of a batch (#8).
+
 ## [0.6.1] - 2026-11-14 (build 8)
 ### Fixed
 - A line of only spaces or tabs inside a subtitle no longer splits the cue in the written .srt.
