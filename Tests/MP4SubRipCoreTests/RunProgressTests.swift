@@ -133,7 +133,7 @@ final class RunProgressTests: XCTestCase {
         XCTAssertEqual(RunProgress.overallFraction([]), 0)
     }
 
-    func testClosedCaptionRowsStayUnmeasuredUntilTheyReportATotal() {
+    func testClosedCaptionRowsStayUnmeasuredUntilTheyReportATotal() throws {
         let captions = SubtitleTrack(
             id: 1,
             languageCode: "eng",

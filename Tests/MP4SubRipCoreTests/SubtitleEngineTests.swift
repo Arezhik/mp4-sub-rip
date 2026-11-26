@@ -352,10 +352,14 @@ final class SubtitleEngineTests: XCTestCase {
         let engineB = SubtitleEngine(reader: reader(text: "Beta"), storage: storage)
         let box = OutcomeBox()
         Task.detached {
-            box.add(await Result { try await engineA.extract(file: movieA, outputDirectory: output, conflict: .skip, reservation: reservation) })
+            box.add(await Self.outcome {
+                try await engineA.extract(file: movieA, outputDirectory: output, conflict: .skip, reservation: reservation)
+            })
         }
         Task.detached {
-            box.add(await Result { try await engineB.extract(file: movieB, outputDirectory: output, conflict: .skip, reservation: reservation) })
+            box.add(await Self.outcome {
+                try await engineB.extract(file: movieB, outputDirectory: output, conflict: .skip, reservation: reservation)
+            })
         }
         try await hold.waitUntilEntered()
         let whileHeld = try await box.waitForCount(1, timeout: 3)
@@ -382,10 +386,14 @@ final class SubtitleEngineTests: XCTestCase {
         let keepB = SubtitleEngine(reader: reader(text: "Beta"), storage: keepStorage)
         let keepBox = OutcomeBox()
         Task.detached {
-            keepBox.add(await Result { try await keepA.extract(file: movieA, outputDirectory: output, conflict: .keepBoth, reservation: keep) })
+            keepBox.add(await Self.outcome {
+                try await keepA.extract(file: movieA, outputDirectory: output, conflict: .keepBoth, reservation: keep)
+            })
         }
         Task.detached {
-            keepBox.add(await Result { try await keepB.extract(file: movieB, outputDirectory: output, conflict: .keepBoth, reservation: keep) })
+            keepBox.add(await Self.outcome {
+                try await keepB.extract(file: movieB, outputDirectory: output, conflict: .keepBoth, reservation: keep)
+            })
         }
         try await keepHold.waitUntilEntered()
         let numberedResult = try await keepBox.waitForCount(1, timeout: 3)
@@ -415,10 +423,14 @@ final class SubtitleEngineTests: XCTestCase {
         let overB = SubtitleEngine(reader: reader(text: "Beta"), storage: overwriteStorage)
         let overBox = OutcomeBox()
         Task.detached {
-            overBox.add(await Result { try await overA.extract(file: movieA, outputDirectory: output, conflict: .overwrite, reservation: overwrite) })
+            overBox.add(await Self.outcome {
+                try await overA.extract(file: movieA, outputDirectory: output, conflict: .overwrite, reservation: overwrite)
+            })
         }
         Task.detached {
-            overBox.add(await Result { try await overB.extract(file: movieB, outputDirectory: output, conflict: .overwrite, reservation: overwrite) })
+            overBox.add(await Self.outcome {
+                try await overB.extract(file: movieB, outputDirectory: output, conflict: .overwrite, reservation: overwrite)
+            })
         }
         try await overwriteHold.waitUntilEntered()
         try await Task.sleep(nanoseconds: 200_000_000)
@@ -565,6 +577,18 @@ final class SubtitleEngineTests: XCTestCase {
         let url = directory.appendingPathComponent(name)
         XCTAssertTrue(FileManager.default.createFile(atPath: url.path, contents: Data()))
         return url
+    }
+
+    /// `Result(catching:)` only accepts a synchronous closure. Record an async
+    /// extraction as success or failure without leaving the detached task.
+    private static func outcome(
+        _ body: @Sendable () async throws -> ExtractionOutcome
+    ) async -> Result<ExtractionOutcome, Error> {
+        do {
+            return .success(try await body())
+        } catch {
+            return .failure(error)
+        }
     }
 }
 
