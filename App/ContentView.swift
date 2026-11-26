@@ -12,6 +12,7 @@ struct ContentView: View {
     @State private var selection = Set<QueueItem.ID>()
     @State private var sortOrder = [KeyPathComparator<QueueItem>]()
     @State private var optionHeld = false
+    @State private var modeSelection = ExtractionMode.oneAtATime
 
     var body: some View {
         VStack(spacing: 0) {
@@ -37,6 +38,7 @@ struct ContentView: View {
             }
         }
         .toolbar { toolbar }
+        .navigationSubtitle(model.runPresentation.toolbarSubtitle)
         .background {
             QueueWindowMarker().allowsHitTesting(false)
             WindowEvents(name: "Queue").allowsHitTesting(false)
@@ -49,6 +51,21 @@ struct ContentView: View {
             let ids = selection
             DispatchQueue.main.async {
                 model.setSelection(ids)
+            }
+        }
+        .onAppear { modeSelection = model.extractionMode }
+        .onChange(of: model.extractionMode) {
+            if modeSelection != model.extractionMode {
+                modeSelection = model.extractionMode
+            }
+        }
+        .onChange(of: modeSelection) {
+            let value = modeSelection
+            DispatchQueue.main.async {
+                model.setExtractionMode(value)
+                if model.extractionMode != value {
+                    modeSelection = model.extractionMode
+                }
             }
         }
     }
@@ -155,10 +172,15 @@ struct ContentView: View {
         }
     }
 
+    /// Widest first. Each step is used only when the one above does not fit:
+    /// hide the summary, shrink Save to, hide the ETA line, then a menu-style Mode.
     private var saveToBar: some View {
         ViewThatFits(in: .horizontal) {
-            saveToContents(showsSummary: true)
-            saveToContents(showsSummary: false)
+            saveToContents(showsSummary: true, saveToMaxWidth: 300, showsCaption: true, menuMode: false)
+            saveToContents(showsSummary: false, saveToMaxWidth: 300, showsCaption: true, menuMode: false)
+            saveToContents(showsSummary: false, saveToMaxWidth: 180, showsCaption: true, menuMode: false)
+            saveToContents(showsSummary: false, saveToMaxWidth: 180, showsCaption: false, menuMode: false)
+            saveToContents(showsSummary: false, saveToMaxWidth: 180, showsCaption: false, menuMode: true)
         }
         .frame(height: 56)
         .padding(.horizontal, 16)
@@ -166,24 +188,128 @@ struct ContentView: View {
         .overlay(alignment: .top) { Divider() }
     }
 
-    private func saveToContents(showsSummary: Bool) -> some View {
+    private var barSummary: String {
+        model.runPresentation.leadingSummary ?? model.queueSummary
+    }
+
+    private var parallelFileCount: Int {
+        ExtractionMode.parallel.slotCount(activeProcessorCount: ProcessInfo.processInfo.activeProcessorCount)
+    }
+
+    private func saveToContents(
+        showsSummary: Bool,
+        saveToMaxWidth: CGFloat,
+        showsCaption: Bool,
+        menuMode: Bool
+    ) -> some View {
         HStack(spacing: 10) {
             HStack(spacing: 8) {
                 Text("Save to:")
-                saveToMenu
+                saveToMenu(maxWidth: saveToMaxWidth)
             }
             .disabled(model.commands.flags.isRunning)
             .help(model.commands.flags.isRunning ? "Output folder can't be changed while extracting." : "Where the .srt files are written")
             if showsSummary {
-                Text(model.queueSummary)
+                Text(barSummary)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                    .monospacedDigit()
+                    .help(model.runPresentation.leadingHelp)
             }
-            Spacer(minLength: 0)
+            Spacer(minLength: 12)
+            trailingCluster(showsCaption: showsCaption, menuMode: menuMode)
         }
     }
 
-    private var saveToMenu: some View {
+    private func trailingCluster(showsCaption: Bool, menuMode: Bool) -> some View {
+        HStack(spacing: 12) {
+            if model.runPresentation.phase == .finished && model.runPresentation.showsFinder {
+                Button {
+                    model.revealRunOutputs()
+                } label: {
+                    Label("Show in Finder", systemImage: "arrow.up.forward.app")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .accessibilityIdentifier("showRunOutputsButton")
+            }
+            if model.runPresentation.showsColumn {
+                progressColumn(model.runPresentation, showsCaption: showsCaption)
+            }
+            extractionModePicker(menu: menuMode)
+        }
+    }
+
+    private func progressColumn(_ presentation: RunPresentation, showsCaption: Bool) -> some View {
+        VStack(alignment: .trailing, spacing: 3) {
+            if showsCaption {
+                Text(presentation.caption.isEmpty ? " " : presentation.caption)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .monospacedDigit()
+                    .opacity(presentation.caption.isEmpty ? 0 : 1)
+                    .accessibilityIdentifier("batchProgressCaption")
+                    .accessibilityHidden(presentation.caption.isEmpty)
+                    .fixedSize(horizontal: !presentation.caption.isEmpty, vertical: true)
+            }
+            ProgressView(value: presentation.fraction, total: 1.0)
+                .frame(minWidth: 120, idealWidth: 152, maxWidth: 152)
+                .transaction { $0.animation = nil }
+                .accessibilityIdentifier("batchProgress")
+                .accessibilityLabel("Progress")
+                .accessibilityValue(presentation.accessibilityValue)
+                .help(presentation.caption)
+        }
+        .frame(minWidth: 120, alignment: .trailing)
+    }
+
+    @ViewBuilder
+    private func extractionModePicker(menu: Bool) -> some View {
+        if menu {
+            styledModePicker(.menu)
+        } else {
+            styledModePicker(.segmented)
+        }
+    }
+
+    private func styledModePicker<Style: PickerStyle>(_ style: Style) -> some View {
+        Picker("Mode", selection: $modeSelection) {
+            Text(ExtractionMode.oneAtATime.title)
+                .tag(ExtractionMode.oneAtATime)
+                .accessibilityIdentifier("extractionModeOneAtATime")
+                .help("Extract one file at a time")
+            Text(ExtractionMode.parallel.title)
+                .tag(ExtractionMode.parallel)
+                .accessibilityIdentifier("extractionModeParallel")
+                .help("Extract up to \(parallelFileCount) files at once")
+        }
+        .pickerStyle(style)
+        .labelsHidden()
+        .fixedSize()
+        .disabled(model.commands.flags.isRunning)
+        .accessibilityLabel("Mode")
+        .accessibilityIdentifier("extractionModePicker")
+        .accessibilityValue(modeAccessibilityValue)
+        .help(modeHelp)
+    }
+
+    private var modeHelp: String {
+        modeSelection == .parallel
+            ? "Extract up to \(parallelFileCount) files at once"
+            : "Extract one file at a time"
+    }
+
+    private var modeAccessibilityValue: String {
+        switch modeSelection {
+        case .oneAtATime:
+            return "One at a Time"
+        case .parallel:
+            return "Parallel, up to \(parallelFileCount) files at once"
+        }
+    }
+
+    private func saveToMenu(maxWidth: CGFloat) -> some View {
         Menu {
             Button {
                 model.setOutputPlacement(SettingsKey.placementNextToSource)
@@ -227,7 +353,7 @@ struct ContentView: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
-            .frame(minWidth: 180, maxWidth: 300, alignment: .leading)
+            .frame(minWidth: 180, maxWidth: maxWidth, alignment: .leading)
         }
         .menuStyle(.button)
     }

@@ -159,7 +159,8 @@ enum DebugLogExporter {
             alert.buttons[1].keyEquivalent = "\u{1b}"
         }
         if alert.runModal() == .alertFirstButtonReturn {
-            NSWorkspace.shared.activateFileViewerSelecting([url])
+            _ = NSWorkspace.shared.selectFile(url.path, inFileViewerRootedAtPath: "")
+            DebugLog.shared.record(.lifecycle, "Reveal in Finder: 1 item(s) api=\(RevealRules.selectFileAPI)")
         }
     }
 

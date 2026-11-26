@@ -331,6 +331,172 @@ final class SubtitleEngineTests: XCTestCase {
         XCTAssertEqual(body, "1\n00:00:01,701 --> 00:00:04,000\nHello there\n")
     }
 
+    func testConcurrentSkipKeepBothAndOverwriteDoNotCorruptTheSameName() async throws {
+        let root = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let firstFolder = root.appendingPathComponent("a", isDirectory: true)
+        let secondFolder = root.appendingPathComponent("b", isDirectory: true)
+        let output = root.appendingPathComponent("out", isDirectory: true)
+        try FileManager.default.createDirectory(at: firstFolder, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: secondFolder, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+        let movieA = try touchMovie(in: firstFolder, name: "Episode.mp4")
+        let movieB = try touchMovie(in: secondFolder, name: "Episode.mp4")
+        let final = output.appendingPathComponent("Episode.srt")
+        let numbered = output.appendingPathComponent("Episode (1).srt")
+
+        let reservation = OutputReservation()
+        let hold = FirstWriteHold()
+        let storage = hold.storage()
+        let engineA = SubtitleEngine(reader: reader(text: "Alpha"), storage: storage)
+        let engineB = SubtitleEngine(reader: reader(text: "Beta"), storage: storage)
+        let box = OutcomeBox()
+        Task.detached {
+            box.add(await Result { try await engineA.extract(file: movieA, outputDirectory: output, conflict: .skip, reservation: reservation) })
+        }
+        Task.detached {
+            box.add(await Result { try await engineB.extract(file: movieB, outputDirectory: output, conflict: .skip, reservation: reservation) })
+        }
+        try await hold.waitUntilEntered()
+        let whileHeld = try await box.waitForCount(1, timeout: 3)
+        let skipped = try whileHeld[0].get()
+        XCTAssertTrue(skipped.written.isEmpty)
+        XCTAssertEqual(skipped.alreadyExists.map(\.path), [final.path])
+        XCTAssertEqual(hold.writes, 1)
+        hold.unblock()
+        let both = try await box.waitForCount(2, timeout: 3)
+        let wrote = try both.map { try $0.get() }.first { !$0.written.isEmpty }
+        let written = try XCTUnwrap(wrote)
+        XCTAssertEqual(written.written.map(\.path), [final.path])
+        let body = try String(contentsOf: final, encoding: .utf8)
+        XCTAssertTrue(body.contains("Alpha") || body.contains("Beta"))
+        XCTAssertFalse(body.contains("Alpha") && body.contains("Beta"))
+        XCTAssertFalse(reservation.isReserved(final.path))
+        try assertNoPartials(in: output)
+
+        try? FileManager.default.removeItem(at: final)
+        let keep = OutputReservation()
+        let keepHold = FirstWriteHold()
+        let keepStorage = keepHold.storage()
+        let keepA = SubtitleEngine(reader: reader(text: "Alpha"), storage: keepStorage)
+        let keepB = SubtitleEngine(reader: reader(text: "Beta"), storage: keepStorage)
+        let keepBox = OutcomeBox()
+        Task.detached {
+            keepBox.add(await Result { try await keepA.extract(file: movieA, outputDirectory: output, conflict: .keepBoth, reservation: keep) })
+        }
+        Task.detached {
+            keepBox.add(await Result { try await keepB.extract(file: movieB, outputDirectory: output, conflict: .keepBoth, reservation: keep) })
+        }
+        try await keepHold.waitUntilEntered()
+        let numberedResult = try await keepBox.waitForCount(1, timeout: 3)
+        let numberedOutcome = try numberedResult[0].get()
+        XCTAssertEqual(
+            numberedOutcome.written.map { URL(fileURLWithPath: $0.path).lastPathComponent },
+            ["Episode (1).srt"]
+        )
+        keepHold.unblock()
+        _ = try await keepBox.waitForCount(2, timeout: 3)
+        let baseBody = try String(contentsOf: final, encoding: .utf8)
+        let numberedBody = try String(contentsOf: numbered, encoding: .utf8)
+        XCTAssertTrue(baseBody.contains("Alpha") || baseBody.contains("Beta"))
+        XCTAssertTrue(numberedBody.contains("Alpha") || numberedBody.contains("Beta"))
+        XCTAssertNotEqual(baseBody, numberedBody)
+        XCTAssertFalse(keep.isReserved(final.path))
+        XCTAssertFalse(keep.isReserved(numbered.path))
+        try assertNoPartials(in: output)
+
+        try? FileManager.default.removeItem(at: final)
+        try? FileManager.default.removeItem(at: numbered)
+        let overwrite = OutputReservation()
+        let moves = MoveOverlap()
+        let overwriteHold = FirstWriteHold(moves: moves)
+        let overwriteStorage = overwriteHold.storage()
+        let overA = SubtitleEngine(reader: reader(text: "Alpha"), storage: overwriteStorage)
+        let overB = SubtitleEngine(reader: reader(text: "Beta"), storage: overwriteStorage)
+        let overBox = OutcomeBox()
+        Task.detached {
+            overBox.add(await Result { try await overA.extract(file: movieA, outputDirectory: output, conflict: .overwrite, reservation: overwrite) })
+        }
+        Task.detached {
+            overBox.add(await Result { try await overB.extract(file: movieB, outputDirectory: output, conflict: .overwrite, reservation: overwrite) })
+        }
+        try await overwriteHold.waitUntilEntered()
+        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertEqual(overwriteHold.writes, 1)
+        XCTAssertTrue(overBox.snapshot().isEmpty)
+        overwriteHold.unblock()
+        let overwritten = try await overBox.waitForCount(2, timeout: 3)
+        XCTAssertEqual(try overwritten.map { try $0.get() }.flatMap(\.written).count, 2)
+        XCTAssertEqual(moves.maxActive, 1)
+        let finalBody = try String(contentsOf: final, encoding: .utf8)
+        XCTAssertTrue(finalBody.hasPrefix("1\n"))
+        let hasAlpha = finalBody.contains("Alpha")
+        let hasBeta = finalBody.contains("Beta")
+        XCTAssertNotEqual(hasAlpha, hasBeta)
+        XCTAssertFalse(overwrite.isReserved(final.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: numbered.path))
+        try assertNoPartials(in: output)
+    }
+
+    func testReservationReleasesWhenWritingFails() async throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let movie = try touchMovie(in: directory, name: "Movie.mp4")
+        let final = directory.appendingPathComponent("Movie.srt")
+        let reservation = OutputReservation()
+        let flaky = FlakyDisk(succeedingWrites: 0)
+        var storage = ExtractionStorage.live
+        storage.write = { data, url in try flaky.write(data, url) }
+        let engine = SubtitleEngine(reader: reader(text: "Alpha"), storage: storage)
+        do {
+            _ = try await engine.extract(file: movie, conflict: .skip, reservation: reservation)
+            XCTFail("expected the write to fail")
+        } catch SubtitleExtractionError.outputNotWritable {
+        }
+        XCTAssertFalse(reservation.isReserved(final.path))
+        let recovered = try await SubtitleEngine(reader: reader(text: "Beta")).extract(
+            file: movie,
+            conflict: .skip,
+            reservation: reservation
+        )
+        XCTAssertEqual(recovered.written.map(\.path), [final.path])
+        XCTAssertTrue(try String(contentsOf: final, encoding: .utf8).contains("Beta"))
+        XCTAssertFalse(reservation.isReserved(final.path))
+    }
+
+    func testReservationReleasesWhenCancelledDuringTheWrite() async throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let movie = try touchMovie(in: directory, name: "Movie.mp4")
+        let final = directory.appendingPathComponent("Movie.srt")
+        let reservation = OutputReservation()
+        let gate = CancelGate()
+        var storage = ExtractionStorage.live
+        storage.write = { data, url in try gate.write(data, url) }
+        let engine = SubtitleEngine(reader: reader(text: "Alpha"), storage: storage)
+        let task = Task.detached {
+            try await engine.extract(file: movie, conflict: .overwrite, reservation: reservation)
+        }
+        try await gate.waitUntilEntered()
+        XCTAssertTrue(reservation.isReserved(final.path))
+        task.cancel()
+        let result = await task.result
+        XCTAssertThrowsError(try result.get()) { error in
+            XCTAssertTrue(error is CancellationError)
+        }
+        XCTAssertFalse(reservation.isReserved(final.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: final.path))
+        let recovered = try await SubtitleEngine(reader: reader(text: "Beta")).extract(
+            file: movie,
+            conflict: .overwrite,
+            reservation: reservation
+        )
+        XCTAssertEqual(recovered.written.map(\.path), [final.path])
+        XCTAssertTrue(try String(contentsOf: final, encoding: .utf8).contains("Beta"))
+        XCTAssertFalse(reservation.isReserved(final.path))
+        try assertNoPartials(in: directory)
+    }
+
     func testChosenTrackThatIsMissingThrows() async throws {
         let directory = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -342,6 +508,19 @@ final class SubtitleEngineTests: XCTestCase {
         } catch let SubtitleExtractionError.unreadable(message) {
             XCTAssertTrue(message.contains("9"))
         }
+    }
+
+    private func reader(text: String) -> ScriptedReader {
+        scripted(tracks: [textTrack(1, "eng")], cues: [1: [cue(text, start: 0, end: 1000)]])
+    }
+
+    private func textTrack(_ id: Int, _ language: String) -> SubtitleTrack {
+        text(id, language)
+    }
+
+    private func assertNoPartials(in directory: URL) throws {
+        let names = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+        XCTAssertFalse(names.contains { $0.contains(".partial") })
     }
 
     private func scripted(
@@ -503,6 +682,156 @@ private final class FlakyDisk: @unchecked Sendable {
         lock.unlock()
         if !allow { throw CocoaError(.fileWriteNoPermission) }
         try data.write(to: url, options: .atomic)
+    }
+}
+
+private final class OutcomeBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [Result<ExtractionOutcome, Error>] = []
+
+    func add(_ value: Result<ExtractionOutcome, Error>) {
+        lock.lock()
+        values.append(value)
+        lock.unlock()
+    }
+
+    func snapshot() -> [Result<ExtractionOutcome, Error>] {
+        lock.lock()
+        defer { lock.unlock() }
+        return values
+    }
+
+    func waitForCount(_ count: Int, timeout: TimeInterval) async throws -> [Result<ExtractionOutcome, Error>] {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            let current = snapshot()
+            if current.count >= count { return current }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTFail("timed out waiting for \(count) extraction results, saw \(snapshot().count)")
+        return snapshot()
+    }
+}
+
+private final class MoveOverlap: @unchecked Sendable {
+    private let lock = NSLock()
+    private var active = 0
+    private(set) var maxActive = 0
+
+    func begin() {
+        lock.lock()
+        active += 1
+        maxActive = max(maxActive, active)
+        lock.unlock()
+    }
+
+    func end() {
+        lock.lock()
+        active -= 1
+        lock.unlock()
+    }
+}
+
+private final class FirstWriteHold: @unchecked Sendable {
+    private let lock = NSLock()
+    private var didHold = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private let release = DispatchSemaphore(value: 0)
+    private let moves: MoveOverlap?
+    private(set) var writes = 0
+
+    init(moves: MoveOverlap? = nil) {
+        self.moves = moves
+    }
+
+    func storage() -> ExtractionStorage {
+        var storage = ExtractionStorage.live
+        storage.write = { [self] data, url in
+            try self.write(data, url)
+        }
+        storage.move = { [self] partial, final in
+            self.moves?.begin()
+            defer { self.moves?.end() }
+            try ExtractionStorage.live.move(partial, final)
+        }
+        return storage
+    }
+
+    func write(_ data: Data, _ url: URL) throws {
+        lock.lock()
+        writes += 1
+        let hold = !didHold
+        if hold { didHold = true }
+        let pending = hold ? waiters : []
+        if hold { waiters.removeAll() }
+        lock.unlock()
+        if hold {
+            for waiter in pending { waiter.resume() }
+            _ = release.wait(timeout: .now() + 5)
+        }
+        try data.write(to: url, options: .atomic)
+    }
+
+    func waitUntilEntered() async throws {
+        let already: Bool = {
+            lock.lock()
+            defer { lock.unlock() }
+            return didHold
+        }()
+        if already { return }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            lock.lock()
+            if didHold {
+                lock.unlock()
+                continuation.resume()
+                return
+            }
+            waiters.append(continuation)
+            lock.unlock()
+        }
+    }
+
+    func unblock() {
+        release.signal()
+    }
+}
+
+private final class CancelGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var entered = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func write(_ data: Data, _ url: URL) throws {
+        lock.lock()
+        entered = true
+        let pending = waiters
+        waiters.removeAll()
+        lock.unlock()
+        for waiter in pending { waiter.resume() }
+        for _ in 0..<400 {
+            if Task.isCancelled { throw CancellationError() }
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+        throw CancellationError()
+    }
+
+    func waitUntilEntered() async throws {
+        let already: Bool = {
+            lock.lock()
+            defer { lock.unlock() }
+            return entered
+        }()
+        if already { return }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            lock.lock()
+            if entered {
+                lock.unlock()
+                continuation.resume()
+                return
+            }
+            waiters.append(continuation)
+            lock.unlock()
+        }
     }
 }
 

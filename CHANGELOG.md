@@ -6,6 +6,18 @@ Every merged PR that changes the shipped app bumps the version in the same PR wi
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-25 (build 10)
+### Added
+- Mode, on the bottom bar, is One at a Time (the default) or Parallel. Parallel extracts up to four files at once, and at least two. The choice is remembered and locked during a run. Files added during a run join that run. Two jobs cannot write the same name: Skip and Add a number treat a reserved path as already there, and Overwrite waits for it (#12).
+- While a run is going, the bar shows how many files are complete and extracting, a determinate bar, and an ETA once the estimate is stable. The toolbar subtitle matches. The Dock badge is how many files are left, and it clears when idle, finished, or stopped (#13).
+- A finished run shows the outcome, a full bar, and how many .srt files were saved (files that already existed are called out and not counted as saved), plus Show in Finder. Adding files or Clear Processed returns the bar to idle (#14).
+
+### Fixed
+- Show in Finder selects one .srt, or opens each output folder when there are several, so Finder no longer stretches a window to the desktop (#14).
+
+### Changed
+- Stop cancels every in-flight file, deletes a half-written .srt, and the bar says how far the run got, with no full bar and no Show in Finder (#12, #14).
+
 ## [0.7.0] - 2026-11-25 (build 9)
 ### Added
 - Files are probed when they join the queue, so language, closed-caption, and image-subtitle chips show before Extract. A file with no text subtitles, or only image subtitles, is marked right away and is not started (#7).

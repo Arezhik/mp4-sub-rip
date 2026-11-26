@@ -30,10 +30,11 @@ enum SettingsSummary {
         let existing = defaults.string(forKey: SettingsKey.existingFile) ?? ExistingFileChoice.skip.rawValue
         let place = placement == SettingsKey.placementFolder ? "folder \(folder.isEmpty ? "(not chosen)" : folder)" : "next to the source file"
         let recentCount = RecentFolderList.load(defaults, key: SettingsKey.recentFolders).count
+        let mode = ExtractionMode.load(defaults).title
         let custom = FFmpegSettings.customPath(in: defaults)
         let resolved = ExternalTool.locate(.primary, customPath: custom)?["ffmpeg"]
         let ffmpeg = FFmpegSettings.summary(customPath: custom, resolvedPath: resolved)
-        return "save \(place), recents \(recentCount), if the output exists \(existing), \(ffmpeg)"
+        return "save \(place), recents \(recentCount), if the output exists \(existing), mode \(mode), \(ffmpeg)"
     }
 }
 

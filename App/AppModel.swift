@@ -68,9 +68,29 @@ final class AppModel: ObservableObject {
     private var highlightGeneration: [UUID: Int] = [:]
     private var highlightSerial = 0
 
+    /// One at a Time or Parallel. Disabled while `commands.flags.isRunning` is true.
+    @Published private(set) var extractionMode: ExtractionMode = .oneAtATime
+    /// Bottom bar, toolbar subtitle, and Dock badge. Not `CommandFlags`: menus
+    /// must not rebuild on a progress tick (PGS2SRT #35).
+    @Published private(set) var runPresentation: RunPresentation = .idle
+    private var runPhase: RunPhase = .idle
+    /// Files this run started, in first-seen order. Probe-settled rows stay out.
+    private var runIDs: [UUID] = []
+    private var eta = RunETA()
+    private var etaCaption = ""
+    private var runStartedAt: Date?
+    private var rowStartedAt: [UUID: Date] = [:]
+    private var finishedDurations: [TimeInterval] = []
+    /// Shared for the whole run so two jobs cannot take the same final name.
+    private var reservation: OutputReservation?
+    /// Probes that should join this run. The run stays open until they settle.
+    private var joiningProbeIDs: Set<UUID> = []
+    private var didLogRunEnd = false
+
     init(defaults: UserDefaults = UITestingLaunch.defaults) {
         self.defaults = defaults
         UITestingLaunch.prepare()
+        extractionMode = ExtractionMode.load(defaults)
         // Save to reads `outputChoice`, so the UI-test folder has to land in
         // defaults before that value is loaded. Input is imported at the end.
         applyUITestingOutputFolder()
@@ -137,15 +157,26 @@ final class AppModel: ObservableObject {
     /// Nothing starts until Extract Subtitles. The folder walk and the probe stay off the main thread.
     func importURLs(_ urls: [URL]) {
         let paths = urls.map(\.path)
+        // A drop during a finished or stopped bar clears that summary immediately.
+        // A drop during a run joins the run when the walk finishes.
+        let joinRun = accepting
+        if !joinRun && runPhase != .idle {
+            returnToIdle()
+        }
         Task { @MainActor in
             let result = await Task.detached(priority: .userInitiated) {
                 FileIntake.collect(paths: paths, listing: .live)
             }.value
-            self.receiveIntake(result, dropped: paths.count)
+            self.receiveIntake(result, dropped: paths.count, joinRun: joinRun)
         }
     }
 
-    private func receiveIntake(_ result: IntakeResult, dropped: Int) {
+    private func receiveIntake(_ result: IntakeResult, dropped: Int, joinRun: Bool) {
+        if joinRun && accepting {
+            // Still in the run. New rows are picked up after they probe.
+        } else if runPhase != .idle {
+            returnToIdle()
+        }
         let existingIDs = Set(items.map(\.id))
         let addition = QueueList.adding(result.sourcePaths, to: items)
         let marked = QueueList.markingNewRowsForProbe(addition.items, existingIDs: existingIDs)
@@ -159,8 +190,12 @@ final class AppModel: ObservableObject {
             DebugLog.shared.record(.queue, "Highlighted \(addition.duplicateIDs.count) already in the queue")
             highlight(addition.duplicateIDs)
         }
+        if accepting {
+            joiningProbeIDs.formUnion(marked.probeIDs)
+        }
         publishCommands()
         scheduleProbes(marked.probeIDs)
+        refreshPresentation()
     }
 
     /// Briefly marks rows that were already in the queue. Adding them again does not start work.
@@ -243,8 +278,14 @@ final class AppModel: ObservableObject {
         probeTasks[id] = nil
         if probesInFlight > 0 { probesInFlight -= 1 }
         defer {
+            joiningProbeIDs.remove(id)
             pumpProbes()
-            if accepting { startNextIfIdle() }
+            if accepting, let item = items.first(where: { $0.id == id }), item.status == .waiting {
+                noteRunMember(id)
+            }
+            if accepting || !tasks.isEmpty {
+                fillFreeSlots()
+            }
         }
         guard let index = items.firstIndex(where: { $0.id == id }), items[index].status == .probing else { return }
         switch result {
@@ -270,25 +311,30 @@ final class AppModel: ObservableObject {
 
     // MARK: Extraction
 
-    /// Runs Pending rows, one at a time. Finished rows are left as they are.
-    /// Adding files does not call this.
+    /// Runs Pending rows, up to the mode's slot count. Finished rows are left as they are.
+    /// Adding files does not call this. Files dropped while this is running join the run.
     func extractSubtitles() {
         guard !accepting, tasks.isEmpty else { return }
         guard items.contains(where: { $0.status == .waiting }) else { return }
         held = []
         accepting = true
+        beginFreshRun(ids: items.filter { $0.status == .waiting }.map(\.id))
         beginOutputScope()
         DebugLog.shared.record(.queue, "Extract Subtitles")
-        startNextIfIdle()
+        logRunStart()
+        fillFreeSlots()
     }
 
-    /// Stops the run. The file that is extracting is cancelled, its partial SRT
-    /// is deleted by the engine, and that row goes back to Pending.
+    /// Stops the run. Every in-flight file is cancelled, its partial SRT is deleted
+    /// by the engine, and that row goes back to Pending. Stop is not a finish.
     func stopExtraction() {
+        guard accepting || !tasks.isEmpty else { return }
         accepting = false
+        joiningProbeIDs = []
         let live = tasks
         for id in live.keys {
             held.insert(id)
+            rowStartedAt[id] = nil
             live[id]?.cancel()
         }
         for item in items where item.status.isWorking {
@@ -296,24 +342,47 @@ final class AppModel: ObservableObject {
         }
         items = QueueRunRules.stopped(items)
         DebugLog.shared.record(.queue, "Stop")
+        runPhase = .stopped
+        etaCaption = ""
+        logRunEnd("stopped")
         publishCommands()
+        refreshPresentation()
+        if tasks.isEmpty {
+            endOutputScope()
+            reservation = nil
+        }
     }
 
-    /// Starts the next Pending row when a run is in progress and nothing is extracting.
-    private func startNextIfIdle() {
-        guard accepting, tasks.isEmpty else {
-            if !accepting && tasks.isEmpty { endOutputScope() }
-            publishCommands()
-            return
+    /// How many files this mode starts at once. Read again each time a slot frees.
+    private var slotLimit: Int {
+        extractionMode.slotCount(activeProcessorCount: ProcessInfo.processInfo.activeProcessorCount)
+    }
+
+    /// Starts Pending rows until every slot is taken, or the run has nothing left.
+    /// The output scope stays open for the whole run, including cleanup after Stop.
+    private func fillFreeSlots() {
+        if accepting {
+            let limit = slotLimit
+            while tasks.count < limit {
+                guard let id = QueueRunRules.nextPending(in: items, held: held),
+                      let next = items.first(where: { $0.id == id }) else { break }
+                if beginExtraction(next) { continue }
+                if items.first(where: { $0.id == id })?.status == .waiting { break }
+            }
+            if tasks.isEmpty && joiningProbeIDs.isEmpty && QueueRunRules.nextPending(in: items, held: held) == nil {
+                accepting = false
+                held = []
+                endOutputScope()
+                reservation = nil
+                runPhase = .finished
+                logRunEnd("finished")
+            }
+        } else if tasks.isEmpty {
+            endOutputScope()
+            reservation = nil
         }
-        while let id = QueueRunRules.nextPending(in: items, held: held),
-              let next = items.first(where: { $0.id == id }) {
-            if beginExtraction(next) { return }
-        }
-        accepting = false
-        held = []
-        endOutputScope()
         publishCommands()
+        refreshPresentation()
     }
 
     private func publishCommands() {
@@ -323,6 +392,7 @@ final class AppModel: ObservableObject {
     /// False means this row was not started, so the caller should try the next one.
     private func beginExtraction(_ item: QueueItem) -> Bool {
         guard item.status == .waiting else { return false }
+        noteRunMember(item.id)
         let request = extractionRequest()
         if request.missingFolder {
             report(.failed(reason: "Choose an output folder in Settings."), for: item.id)
@@ -330,6 +400,7 @@ final class AppModel: ObservableObject {
         }
         let id = item.id
         let path = item.path
+        rowStartedAt[id] = Date()
         report(.working(completed: 0, total: 0), for: id)
         let task = Task.detached {
             let finish = await Self.runExtraction(id: id, path: path, request: request)
@@ -347,6 +418,7 @@ final class AppModel: ObservableObject {
                 file: URL(fileURLWithPath: path),
                 outputDirectory: request.directory,
                 conflict: request.conflict,
+                reservation: request.reservation,
                 progress: { completed, total in
                     Task { @MainActor in
                         guard let model = AppModel.shared,
@@ -370,27 +442,40 @@ final class AppModel: ObservableObject {
     private func complete(id: UUID, finish: ExtractionFinish) {
         tasks[id] = nil
         let wasHeld = held.contains(id)
-        defer { startNextIfIdle() }
         if wasHeld {
             // Stop or Cancel already sent this row back to Pending. If the file
             // finished writing before the cancel landed, keep that result.
             if case let .success(outcome) = finish {
                 held.remove(id)
+                recordFinishDuration(id)
                 apply(outcome, to: id)
+            } else {
+                rowStartedAt[id] = nil
             }
+            fillFreeSlots()
             return
         }
-        guard let item = items.first(where: { $0.id == id }), item.status.isActive else { return }
+        guard let item = items.first(where: { $0.id == id }), item.status.isActive else {
+            rowStartedAt[id] = nil
+            fillFreeSlots()
+            return
+        }
         switch finish {
         case .cancelled:
             held.insert(id)
+            rowStartedAt[id] = nil
+            // Pulled out of this run. The next Extract can pick it up.
+            runIDs.removeAll { $0 == id }
             items = QueueRunRules.cancelled(items, id: id)
             publishCommands()
         case let .failed(message):
+            recordFinishDuration(id)
             report(.failed(reason: message), for: id)
         case let .success(outcome):
+            recordFinishDuration(id)
             apply(outcome, to: id)
         }
+        fillFreeSlots()
     }
 
     private func apply(_ outcome: ExtractionOutcome, to id: UUID) {
@@ -413,12 +498,17 @@ final class AppModel: ObservableObject {
             conflict = .skip
         }
         guard outputChoice.placement == SettingsKey.placementFolder else {
-            return ExtractionRequest(directory: nil, conflict: conflict, missingFolder: false)
+            return ExtractionRequest(directory: nil, conflict: conflict, missingFolder: false, reservation: reservation)
         }
         if outputChoice.folderPath.isEmpty {
-            return ExtractionRequest(directory: nil, conflict: conflict, missingFolder: true)
+            return ExtractionRequest(directory: nil, conflict: conflict, missingFolder: true, reservation: reservation)
         }
-        return ExtractionRequest(directory: outputDirectory(), conflict: conflict, missingFolder: false)
+        return ExtractionRequest(
+            directory: outputDirectory(),
+            conflict: conflict,
+            missingFolder: false,
+            reservation: reservation
+        )
     }
 
     // MARK: Progress from the engine
@@ -439,6 +529,7 @@ final class AppModel: ObservableObject {
         }
         items[index].status = status
         publishCommands()
+        refreshPresentation()
     }
 
     private func logStatus(_ status: JobStatus, for item: QueueItem) {
@@ -483,12 +574,15 @@ final class AppModel: ObservableObject {
         let hadTask = tasks[id] != nil
         tasks[id]?.cancel()
         held.insert(id)
+        rowStartedAt[id] = nil
         guard let item = items.first(where: { $0.id == id }), item.status.isActive else { return }
         DebugLog.shared.record(.work, "Canceled \(item.fileName)")
+        runIDs.removeAll { $0 == id }
         items = QueueRunRules.cancelled(items, id: id)
         publishCommands()
+        refreshPresentation()
         if accepting && !hadTask {
-            startNextIfIdle()
+            fillFreeSlots()
         }
     }
 
@@ -510,13 +604,24 @@ final class AppModel: ObservableObject {
             probeTasks[id]?.cancel()
             probeTasks[id] = nil
             held.remove(id)
+            joiningProbeIDs.remove(id)
+            rowStartedAt[id] = nil
         }
+        runIDs.removeAll { victimIDs.contains($0) }
         items = QueueHousekeeping.removing(items, ids: victimIDs)
         selection.subtract(victimIDs)
         DebugLog.shared.record(.queue, "Removed \(victims.count) from the queue")
-        publishCommands()
-        if accepting && tasks.isEmpty {
-            startNextIfIdle()
+        if accepting {
+            fillFreeSlots()
+        } else if runPhase == .finished || runPhase == .stopped {
+            if runRows().isEmpty {
+                returnToIdle()
+            } else {
+                publishCommands()
+                refreshPresentation()
+            }
+        } else {
+            publishCommands()
         }
     }
 
@@ -535,35 +640,54 @@ final class AppModel: ObservableObject {
         selection = selection.intersection(kept)
         let line = includingFailed ? "Cleared all finished (\(removed))" : "Cleared processed (\(removed))"
         DebugLog.shared.record(.queue, line)
+        if runPhase == .finished || runPhase == .stopped {
+            returnToIdle()
+            return
+        }
         publishCommands()
     }
 
-    /// Failed rows go back to Pending. If nothing is running, that row starts now.
-    /// During a run it waits its turn with the other Pending rows.
+    /// Failed rows go back to Pending. Idle and Stopped start a mini-run of just
+    /// those rows. Finished extends that run. During a run the row waits its turn.
     func retry(ids: Set<UUID>) {
         let targets = items.filter { ids.contains($0.id) && $0.status.canRetry }
         guard !targets.isEmpty else { return }
-        items = QueueHousekeeping.retrying(items, ids: ids)
+        let retryIDs = Set(targets.map(\.id))
+        items = QueueHousekeeping.retrying(items, ids: retryIDs)
         for item in targets {
             held.remove(item.id)
+            rowStartedAt[item.id] = nil
             DebugLog.shared.record(.queue, "Retry \(item.fileName)")
         }
         if accepting {
+            for id in retryIDs { noteRunMember(id) }
             publishCommands()
-            startNextIfIdle()
+            fillFreeSlots()
             return
         }
-        guard tasks.isEmpty, let first = items.first(where: { ids.contains($0.id) && $0.status == .waiting }) else {
+        guard tasks.isEmpty else {
             publishCommands()
+            refreshPresentation()
             return
         }
-        held = []
+        // Other Pending rows stay out of a mini-run and out of a finished-run retry.
+        held = Set(items.filter { $0.status == .waiting && !retryIDs.contains($0.id) }.map(\.id))
         accepting = true
+        if runPhase == .finished {
+            for id in retryIDs { noteRunMember(id) }
+            runPhase = .running
+            eta = RunETA()
+            etaCaption = ""
+            if runStartedAt == nil { runStartedAt = Date() }
+            if reservation == nil { reservation = OutputReservation() }
+            didLogRunEnd = false
+        } else {
+            beginFreshRun(ids: targets.map(\.id))
+        }
         beginOutputScope()
         DebugLog.shared.record(.queue, "Extract Subtitles")
-        if !beginExtraction(first) {
-            startNextIfIdle()
-        }
+        logRunStart()
+        fillFreeSlots()
     }
 
     func retrySelection() {
@@ -581,6 +705,19 @@ final class AppModel: ObservableObject {
     func showVideoSelection() { showVideo(ids: selection) }
     func openSubtitleSelection() { openSubtitle(ids: selection) }
     func showErrorSelection() { showError(ids: selection) }
+
+    /// Show in Finder for this run's saved and skipped-existing outputs.
+    /// Nothing left on disk shows the missing-file alert and does not open Finder.
+    func revealRunOutputs() {
+        guard runPhase == .finished, runPresentation.showsFinder else { return }
+        present(
+            paths: runPresentation.outputPaths,
+            retryIDs: [],
+            reveal: true,
+            logAction: "Show in Finder",
+            groupName: "Those files"
+        )
+    }
 
     func reveal(ids: Set<UUID>) {
         let paths = items.filter { ids.contains($0.id) }.flatMap { $0.status.outputPaths }
@@ -619,6 +756,32 @@ final class AppModel: ObservableObject {
         logAction: String,
         groupName: String
     ) {
+        if !reveal {
+            let existing = RevealRules.existing(
+                paths: paths,
+                fileExists: { @Sendable path in Self.regularFileExists(path) }
+            )
+            if existing.isEmpty {
+                revealInFinder(paths: paths, retryIDs: retryIDs, logAction: logAction, groupName: groupName)
+                return
+            }
+            DebugLog.shared.record(.lifecycle, "\(logAction) \(existing.joined(separator: ", "))")
+            for path in existing {
+                NSWorkspace.shared.open(URL(fileURLWithPath: path))
+            }
+            return
+        }
+        revealInFinder(paths: paths, retryIDs: retryIDs, logAction: logAction, groupName: groupName)
+    }
+
+    /// One file is selected. Several files open each folder with nothing selected.
+    /// Selecting many URLs at once stretches the Finder window to the desktop.
+    private func revealInFinder(
+        paths: [String],
+        retryIDs: Set<UUID>,
+        logAction: String,
+        groupName: String
+    ) {
         let action = RevealRules.plan(
             paths: paths,
             fileExists: { @Sendable path in Self.regularFileExists(path) },
@@ -628,15 +791,19 @@ final class AppModel: ObservableObject {
         switch action {
         case .nothing:
             return
-        case let .select(found):
-            let urls = found.map { URL(fileURLWithPath: $0) }
-            DebugLog.shared.record(.lifecycle, "\(logAction) \(found.joined(separator: ", "))")
-            if reveal {
-                NSWorkspace.shared.activateFileViewerSelecting(urls)
-            } else {
-                for url in urls {
-                    NSWorkspace.shared.open(url)
-                }
+        case let .file(path):
+            _ = NSWorkspace.shared.selectFile(path, inFileViewerRootedAtPath: "")
+            DebugLog.shared.record(
+                .lifecycle,
+                "\(logAction): 1 item(s) api=\(RevealRules.selectFileAPI)"
+            )
+        case let .folders(folders):
+            for folder in folders {
+                _ = NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: folder)
+                DebugLog.shared.record(
+                    .lifecycle,
+                    "\(logAction): Output folder api=\(RevealRules.selectFileAPI)"
+                )
             }
         case let .missing(name, folder, folderExists):
             DebugLog.shared.record(.lifecycle, "\(logAction): file missing \(name)", isWarning: true)
@@ -821,6 +988,116 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func setExtractionMode(_ mode: ExtractionMode) {
+        // `isRunning` is this latch. Cleanup after Stop may still hold a task.
+        guard !accepting else { return }
+        guard mode != extractionMode else { return }
+        extractionMode = mode
+        mode.save(to: defaults)
+        logSettings()
+    }
+
+    private func beginFreshRun(ids: [UUID]) {
+        runPhase = .running
+        runIDs = []
+        for id in ids { noteRunMember(id) }
+        eta = RunETA()
+        etaCaption = ""
+        runStartedAt = Date()
+        rowStartedAt = [:]
+        finishedDurations = []
+        reservation = OutputReservation()
+        didLogRunEnd = false
+        joiningProbeIDs = Set(items.compactMap { item in
+            item.status == .probing ? item.id : nil
+        })
+    }
+
+    private func returnToIdle() {
+        runPhase = .idle
+        runIDs = []
+        eta = RunETA()
+        etaCaption = ""
+        runStartedAt = nil
+        rowStartedAt = [:]
+        finishedDurations = []
+        reservation = nil
+        joiningProbeIDs = []
+        publishCommands()
+        refreshPresentation()
+    }
+
+    private func noteRunMember(_ id: UUID) {
+        if !runIDs.contains(id) { runIDs.append(id) }
+    }
+
+    /// Wall clock only. Do not build `now` from elapsed time: a shared elapsed
+    /// collapses the ETA throttle onto one date and drops later sentences.
+    private func refreshPresentation(now: Date = Date()) {
+        let rows = runRows()
+        if runPhase == .running {
+            let elapsed = runStartedAt.map { max(0, now.timeIntervalSince($0)) } ?? 0
+            let sample = RunProgress.etaSample(
+                rows: rows,
+                runElapsed: elapsed,
+                finishedDurations: finishedDurations,
+                concurrency: slotLimit,
+                cancelled: false,
+                now: now,
+                startedAt: rowStartedAt
+            )
+            if let event = eta.event(for: sample, at: now) {
+                etaCaption = event.caption
+            }
+        }
+        let next = RunProgress.presentation(
+            phase: runPhase,
+            rows: rows,
+            etaCaption: runPhase == .running ? etaCaption : ""
+        )
+        if next != runPresentation {
+            runPresentation = next
+        }
+        syncDockBadge(next.dockBadge)
+    }
+
+    private func runRows() -> [RunRow] {
+        var rows: [RunRow] = []
+        for id in runIDs {
+            guard let item = items.first(where: { $0.id == id }) else { continue }
+            if let row = RunRows.make(item) { rows.append(row) }
+        }
+        return rows
+    }
+
+    private func recordFinishDuration(_ id: UUID, now: Date = Date()) {
+        if let start = rowStartedAt[id] {
+            let duration = now.timeIntervalSince(start)
+            if duration.isFinite, duration >= 0 {
+                finishedDurations.append(duration)
+            }
+        }
+        rowStartedAt[id] = nil
+    }
+
+    private func logRunStart() {
+        DebugLog.shared.record(.queue, "Run start mode \(extractionMode.title) limit \(slotLimit)")
+    }
+
+    private func logRunEnd(_ reason: String) {
+        guard !didLogRunEnd else { return }
+        didLogRunEnd = true
+        DebugLog.shared.record(.queue, "Run end \(reason) mode \(extractionMode.title) limit \(slotLimit)")
+    }
+
+    /// One owner. Cleared when the presentation has no badge (idle, finished, stopped).
+    private func syncDockBadge(_ badge: String?) {
+        let tile = NSApp.dockTile
+        if tile.badgeLabel != badge {
+            tile.badgeLabel = badge
+        }
+    }
+
     private func logLaunch() {
         let system = ProcessInfo.processInfo.operatingSystemVersionString
         DebugLog.shared.record(.lifecycle, "Launched \(AppVersion.marketing) (\(AppVersion.build)), \(system)")
@@ -850,6 +1127,7 @@ private struct ExtractionRequest: Sendable {
     var directory: URL?
     var conflict: OutputConflictPolicy
     var missingFolder: Bool
+    var reservation: OutputReservation?
 }
 
 /// The bit of an extraction result that can cross back to the main actor.

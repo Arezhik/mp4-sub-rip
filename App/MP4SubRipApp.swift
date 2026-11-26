@@ -36,7 +36,8 @@ struct MP4SubRipApp: App {
 }
 
 /// Menu bar items. They read only `CommandState`, which changes rarely, never the
-/// queue rows themselves, so an open menu does not rebuild during a run (PGS2SRT #35).
+/// queue rows or `runPresentation`. Progress, the ETA, and the Dock badge stay
+/// on `AppModel`, so an open menu does not rebuild during a run (PGS2SRT #35).
 /// Every toolbar button must also be here (PGS2SRT #7, #28).
 struct AppCommands: Commands {
     let model: AppModel
