@@ -19,7 +19,7 @@
 - ffmpeg SRT cleanup (c608 only): strip the first `{\anN}` in a cue; a later one in the same cue becomes a line break; remove `<font>` / `</font>` and `\h`; keep real `<i>`. Flatten overlapping cues onto one timeline; lengthen a last cue under one second. No punctuation-based glue fallback.
 - External tools: search `/opt/homebrew/bin`, `/usr/local/bin`, `/Applications/<Tool>*.app/Contents/MacOS`, then `PATH`. Log the command, exit code, and stderr (cut at 2,000 characters). Settings can find ffmpeg automatically or use a copy the user chooses. A chosen path is used alone — if it is missing, do not fall back to automatic; skip the closed-caption file and say so. Launch log and debug-log header must say whether the copy was automatic or chosen.
 - Log through `DebugLog.shared.record(...)`: launch, settings, each file's start, finish, and error, window events, Saves, and Reveal. No user content. Home becomes `~`.
-- Reveal in Finder checks the file exists first, uses `activateFileViewerSelecting`, and logs the call.
+- Reveal in Finder checks the file exists first, uses `NSWorkspace.selectFile(_:inFileViewerRootedAtPath:)`, and logs the call.
 - Add a test with every bug fix. Use small generated fixtures and keep real media out of git. Arezhik's local samples (for example `~/Desktop/Test MP4s`) are for Mac test steps only.
 - In the PR description, list the test steps for Arezhik to run on his Mac (use `docs/PR_TEST_CHECKLIST.md`). He tests and approves every merge.
 - Versioning (SemVer): in the same PR, run `scripts/bump-version.sh patch` for a bug fix or small tweak, `minor` for a new feature, or `major` for a major enhancement or new phase. Docs-only and CI-only PRs don't bump. `scripts/bump-version.sh --check` must pass (CI runs it).

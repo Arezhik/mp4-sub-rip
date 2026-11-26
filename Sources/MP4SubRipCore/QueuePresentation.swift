@@ -203,11 +203,22 @@ public struct RowActionSet: Equatable, Sendable {
     }
 }
 
-/// Reveal only selects files that are still on disk.
+/// How Show in Finder opens what is still on disk.
+///
+/// Selecting many URLs at once stretches the Finder window to the desktop.
+/// One file is selected with an empty root. Several files open their folder
+/// with nothing selected. Files in more than one folder open each folder.
+/// Nothing on disk is the missing-file alert, not an empty Finder window.
 public enum RevealRules {
+    /// Logged with every Show in Finder call. The app passes this to the debug log.
+    public static let selectFileAPI = "NSWorkspace.selectFile(_:inFileViewerRootedAtPath:)"
+
     public enum Action: Equatable, Sendable {
         case nothing
-        case select([String])
+        /// One file that is still there. Select it (`inFileViewerRootedAtPath: ""`).
+        case file(String)
+        /// Parent folders to open with no selection, first-seen order.
+        case folders([String])
         case missing(name: String, folder: String, folderExists: Bool)
     }
 
@@ -217,18 +228,49 @@ public enum RevealRules {
         directoryExists: @Sendable (String) -> Bool,
         missingGroupName: String = "Those files"
     ) -> Action {
+        let unique = deduped(paths)
+        if unique.isEmpty { return .nothing }
+        let present = unique.filter(fileExists)
+        if present.isEmpty {
+            let folder = parent(of: unique[0])
+            let name = unique.count == 1
+                ? URL(fileURLWithPath: unique[0]).lastPathComponent
+                : missingGroupName
+            return .missing(name: name, folder: folder, folderExists: directoryExists(folder))
+        }
+        if present.count == 1 { return .file(present[0]) }
+        return .folders(parentFolders(of: present))
+    }
+
+    /// Files that are still on disk, in the order they were given. Open Subtitle uses this.
+    public static func existing(
+        paths: [String],
+        fileExists: @Sendable (String) -> Bool
+    ) -> [String] {
+        deduped(paths).filter(fileExists)
+    }
+
+    private static func deduped(_ paths: [String]) -> [String] {
         var unique: [String] = []
         for path in paths where !unique.contains(path) {
             unique.append(path)
         }
-        if unique.isEmpty { return .nothing }
-        let present = unique.filter(fileExists)
-        if !present.isEmpty { return .select(present) }
-        let folder = URL(fileURLWithPath: unique[0]).deletingLastPathComponent().path
-        let name = unique.count == 1
-            ? URL(fileURLWithPath: unique[0]).lastPathComponent
-            : missingGroupName
-        return .missing(name: name, folder: folder, folderExists: directoryExists(folder))
+        return unique
+    }
+
+    private static func parentFolders(of paths: [String]) -> [String] {
+        var folders: [String] = []
+        for path in paths {
+            let folder = parent(of: path)
+            if !folder.isEmpty && !folders.contains(folder) {
+                folders.append(folder)
+            }
+        }
+        return folders
+    }
+
+    private static func parent(of path: String) -> String {
+        URL(fileURLWithPath: path).deletingLastPathComponent().standardizedFileURL.path
     }
 }
 

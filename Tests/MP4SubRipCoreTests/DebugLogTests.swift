@@ -56,4 +56,74 @@ final class DebugLogTests: XCTestCase {
         log.record(.error, "ignored", isError: true)
         XCTAssertEqual(log.recentText(), "")
     }
+
+    func testConcurrentRecordsStayIntact() throws {
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("debuglog-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let log = DebugLog(homeDirectory: "/Users/ada", timeZone: TimeZone(identifier: "UTC")!)
+        log.configure(directory: folder, maxTotalBytes: 5_000_000, fileCount: 3)
+        DispatchQueue.concurrentPerform(iterations: 40) { index in
+            log.record(.work, "marker \(index) /Users/ada/Movies/clip.mp4")
+        }
+        let text = log.recentText()
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: true)
+        XCTAssertEqual(lines.count, 40)
+        for index in 0..<40 {
+            XCTAssertEqual(lines.filter { $0.contains("marker \(index) ~/Movies/clip.mp4") }.count, 1)
+        }
+        XCTAssertFalse(text.contains("/Users/ada/"))
+        for line in lines {
+            XCTAssertTrue(line.contains("[work] info "))
+            XCTAssertFalse(line.contains("marker") && line.contains("payload"))
+        }
+    }
+
+    func testSharedLogAcceptsConcurrentRecords() throws {
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("debuglog-shared-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            DebugLog.shared.reset()
+            try? FileManager.default.removeItem(at: folder)
+        }
+        DebugLog.shared.reset()
+        DebugLog.shared.configure(
+            directory: folder,
+            maxTotalBytes: 5_000_000,
+            fileCount: 3,
+            homeDirectory: "/Users/ada",
+            timeZone: TimeZone(identifier: "UTC")!
+        )
+        DispatchQueue.concurrentPerform(iterations: 30) { index in
+            DebugLog.shared.record(.queue, "shared \(index) /Users/ada/Movies/a.mp4")
+        }
+        let text = DebugLog.shared.recentText()
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: true)
+        XCTAssertEqual(lines.count, 30)
+        for index in 0..<30 {
+            XCTAssertTrue(text.contains("shared \(index) ~/Movies/a.mp4"))
+        }
+        XCTAssertFalse(text.contains("/Users/ada/"))
+    }
+
+    func testRollingLogStoreAppendsFromSeveralThreads() throws {
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("rolling-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let store = RollingLogStore(directory: folder, maxTotalBytes: 5_000_000, fileCount: 3)
+        DispatchQueue.concurrentPerform(iterations: 40) { index in
+            store.append("row \(index) payload")
+        }
+        let text = store.combinedText()
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
+        XCTAssertEqual(lines.count, 40)
+        for index in 0..<40 {
+            XCTAssertTrue(lines.contains("row \(index) payload"))
+        }
+        for line in lines {
+            XCTAssertTrue(line.hasPrefix("row "))
+            XCTAssertTrue(line.hasSuffix("payload"))
+            XCTAssertEqual(line.components(separatedBy: "payload").count, 2)
+        }
+    }
 }

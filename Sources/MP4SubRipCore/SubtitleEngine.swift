@@ -123,13 +123,17 @@ public struct SubtitleEngine: Sendable {
 
     /// Extracts `trackIDs`, or every extractable text track when `trackIDs` is nil.
     /// `outputDirectory` nil writes next to the movie.
-    /// A cancel or a failure deletes any SRT this call created, including a half-written one.
+    /// `reservation` is shared by every file in a parallel run so two jobs cannot
+    /// take the same final name. Nil keeps the single-file check against the disk.
+    /// A cancel or a failure deletes any SRT this call created, including a half-written one,
+    /// and releases every path this call claimed.
     public func extract(
         file: URL,
         trackIDs: Set<Int>? = nil,
         outputDirectory: URL? = nil,
         alwaysIncludeLanguageCode: Bool = false,
         conflict: OutputConflictPolicy = .skip,
+        reservation: OutputReservation? = nil,
         progress: (@Sendable (Int, Int) -> Void)? = nil
     ) async throws -> ExtractionOutcome {
         try Task.checkCancellation()
@@ -199,6 +203,9 @@ public struct SubtitleEngine: Sendable {
         // reading or writing does not replace an SRT the user already had.
         // `replaceItemAt` is avoided: Linux Foundation reports "file doesn't
         // exist" for a file that is there.
+        // Claims are released after that cleanup, on success, failure, and cancel.
+        var claimed: [String] = []
+        defer { reservation?.release(claimed) }
         var partials: [URL] = []
         var committed: [URL] = []
         var finished = false
@@ -220,13 +227,20 @@ public struct SubtitleEngine: Sendable {
         for item in collected {
             try Task.checkCancellation()
             guard let name = fileNames[item.track.id] else { continue }
-            let plan: OutputPlan
+            let planned: PlannedOutput
             do {
-                plan = try planOutput(fileName: name, directory: directory, policy: conflict)
+                planned = try await planOutput(
+                    fileName: name,
+                    directory: directory,
+                    policy: conflict,
+                    reservation: reservation
+                )
             } catch {
                 throw Self.mapped(error)
             }
-            switch plan {
+            if let path = planned.claimed { claimed.append(path) }
+            try Task.checkCancellation()
+            switch planned.plan {
             case let .skip(url):
                 alreadyExists.append(ExistingSubtitleOutput(trackID: item.track.id, path: url.path))
                 DebugLog.shared.record(.work, "Output exists \(url.lastPathComponent)", isWarning: true)
@@ -321,25 +335,67 @@ public struct SubtitleEngine: Sendable {
         case write(URL)
     }
 
-    private func planOutput(fileName: String, directory: URL, policy: OutputConflictPolicy) throws -> OutputPlan {
+    private struct PlannedOutput {
+        var plan: OutputPlan
+        /// Set when `reservation` holds this path. Released when extract returns.
+        var claimed: String?
+    }
+
+    private func planOutput(
+        fileName: String,
+        directory: URL,
+        policy: OutputConflictPolicy,
+        reservation: OutputReservation?
+    ) async throws -> PlannedOutput {
         let final = directory.appendingPathComponent(fileName)
         switch policy {
-        case .skip where storage.fileExists(final.path):
-            return .skip(final)
-        case .skip, .overwrite:
-            return .write(final)
+        case .skip:
+            if storage.fileExists(final.path) {
+                return PlannedOutput(plan: .skip(final), claimed: nil)
+            }
+            if let reservation, !reservation.tryClaim(final.path) {
+                // Another job in this run already took the name. It is not on disk yet.
+                return PlannedOutput(plan: .skip(final), claimed: nil)
+            }
+            return PlannedOutput(plan: .write(final), claimed: reservation == nil ? nil : final.path)
+        case .overwrite:
+            if let reservation {
+                await reservation.claimExclusive(final.path)
+                do {
+                    try Task.checkCancellation()
+                } catch {
+                    reservation.release(final.path)
+                    throw error
+                }
+            }
+            return PlannedOutput(plan: .write(final), claimed: reservation == nil ? nil : final.path)
         case .keepBoth:
             var candidate = final
             var index = 1
-            while storage.fileExists(candidate.path) {
-                candidate = directory.appendingPathComponent(SubtitleFileNames.numbered(fileName, index: index))
-                index += 1
-                if index > 999 {
-                    throw SubtitleExtractionError.unreadable("Could not find a free name for \(fileName).")
+            while true {
+                if storage.fileExists(candidate.path) {
+                    candidate = try nextNumber(fileName, directory: directory, index: &index)
+                    continue
                 }
+                if let reservation {
+                    if reservation.tryClaim(candidate.path) {
+                        return PlannedOutput(plan: .write(candidate), claimed: candidate.path)
+                    }
+                    candidate = try nextNumber(fileName, directory: directory, index: &index)
+                    continue
+                }
+                return PlannedOutput(plan: .write(candidate), claimed: nil)
             }
-            return .write(candidate)
         }
+    }
+
+    private func nextNumber(_ fileName: String, directory: URL, index: inout Int) throws -> URL {
+        let candidate = directory.appendingPathComponent(SubtitleFileNames.numbered(fileName, index: index))
+        index += 1
+        if index > 999 {
+            throw SubtitleExtractionError.unreadable("Could not find a free name for \(fileName).")
+        }
+        return candidate
     }
 
     private func partialURL(for final: URL) -> URL {

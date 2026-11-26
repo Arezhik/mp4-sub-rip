@@ -165,7 +165,7 @@ final class QueuePresentationTests: XCTestCase {
     func testRevealSelectsOnlyFilesThatExist() {
         let paths = ["/out/One.srt", "/out/Two.srt"]
         let some = RevealRules.plan(paths: paths, fileExists: { $0.hasSuffix("One.srt") }, directoryExists: { _ in true })
-        XCTAssertEqual(some, .select(["/out/One.srt"]))
+        XCTAssertEqual(some, .file("/out/One.srt"))
         let none = RevealRules.plan(
             paths: ["/out/One.srt"],
             fileExists: { _ in false },
@@ -181,6 +181,60 @@ final class QueuePresentationTests: XCTestCase {
         )
         XCTAssertEqual(many, .missing(name: "The subtitle files", folder: "/out", folderExists: false))
         XCTAssertEqual(RevealRules.plan(paths: [], fileExists: { _ in true }, directoryExists: { _ in true }), .nothing)
+    }
+
+    func testRevealOneFileSelectsThatFile() {
+        XCTAssertEqual(
+            RevealRules.selectFileAPI,
+            "NSWorkspace.selectFile(_:inFileViewerRootedAtPath:)"
+        )
+        let action = RevealRules.plan(
+            paths: ["/out/One.srt", "/out/One.srt"],
+            fileExists: { _ in true },
+            directoryExists: { _ in true }
+        )
+        XCTAssertEqual(action, .file("/out/One.srt"))
+        XCTAssertEqual(
+            RevealRules.existing(paths: ["/out/One.srt", "/out/One.srt", "/out/Two.srt"], fileExists: { $0.hasSuffix("One.srt") }),
+            ["/out/One.srt"]
+        )
+    }
+
+    func testRevealSharedParentOpensThatFolder() {
+        let action = RevealRules.plan(
+            paths: ["/out/a/One.srt", "/out/a/Two.srt", "/out/a/One.srt"],
+            fileExists: { _ in true },
+            directoryExists: { _ in true }
+        )
+        XCTAssertEqual(action, .folders(["/out/a"]))
+    }
+
+    func testRevealMultipleParentsKeepsFirstSeenOrder() {
+        let action = RevealRules.plan(
+            paths: [
+                "/vol/a/../b/One.srt",
+                "/vol/a/Two.srt",
+                "/vol/b/Three.srt",
+                "/vol/missing/Gone.srt"
+            ],
+            fileExists: { !$0.contains("missing") },
+            directoryExists: { _ in true }
+        )
+        XCTAssertEqual(action, .folders(["/vol/b", "/vol/a"]))
+    }
+
+    func testRevealMissingOutputsDoesNotOpenFinder() {
+        let action = RevealRules.plan(
+            paths: ["/out/a/One.srt", "/out/b/Two.srt"],
+            fileExists: { _ in false },
+            directoryExists: { $0 == "/out/a" },
+            missingGroupName: "The subtitle files"
+        )
+        XCTAssertEqual(action, .missing(name: "The subtitle files", folder: "/out/a", folderExists: true))
+        XCTAssertEqual(
+            RevealRules.existing(paths: ["/out/a/One.srt"], fileExists: { _ in false }),
+            []
+        )
     }
 
     func testRecentFoldersStayAtThreeAndDropMissing() {

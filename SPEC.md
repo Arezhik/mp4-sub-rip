@@ -32,7 +32,16 @@ One or two sentences: who it's for and what it does.
 - [ ] Help → Export Debug Log shows the launch, each file's start and finish, errors, and tool versions.
 
 ## Phase 2 (0.7.0)
-Probe on add, the existing-file status, Save to with recent folders, and queue housekeeping (remove, Clear Processed, Retry, Reveal). Parallel mode, overall progress, and the finish summary stay in Phase 3. The Apply-to-all conflict sheet stays parked.
+Probe on add, the existing-file status, Save to with recent folders, and queue housekeeping (remove, Clear Processed, Retry, Reveal). The Apply-to-all conflict sheet stays parked.
+
+## Phase 3 (0.8.0)
+Mode is One at a Time (default) or Parallel. Parallel runs `max(2, min(activeProcessorCount / 2, 4))` files at once. The bottom-bar picker is disabled during a run, and the choice is remembered. Files added during a run join that run. Stop cancels every in-flight file and deletes a half-written .srt. Two jobs cannot take the same final name: Skip and Add a number treat a reserved path as already there, and Overwrite waits for that path.
+
+While a run is going, the bar shows `N of M complete · K extracting`, a determinate bar, and an ETA when the estimate is stable. The toolbar subtitle matches. The Dock badge is how many files are left, and it clears when idle, finished, or stopped. Menus still read only `CommandFlags`. Progress and the ETA are not on those flags.
+
+A finished run shows the outcome summary, a full bar, and `N .srt saved` (files that already existed are called out and are not counted as saved), plus Show in Finder. One file is selected with `NSWorkspace.selectFile(_:inFileViewerRootedAtPath:)`. Several files open their folders, so Finder does not stretch a window to the desktop. Nothing left on disk shows the missing-file alert. Adding files or Clear Processed returns the bar to idle. Stop is not a finish: the summary says how far the run got, with no full bar and no Show in Finder.
+
+The concurrency stepper (2–8) and the always-include-language-code toggle stay later. The Apply-to-all conflict sheet stays parked.
 
 ## Later phases
 Nice-to-haves go here, or become low-priority `enhancement` issues. They don't go into the current PR.
