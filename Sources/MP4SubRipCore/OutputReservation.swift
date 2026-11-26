@@ -8,56 +8,49 @@ import Foundation
 //   takes `Movie (1).srt`.
 // - Overwrite waits until the path is free, then writes. Moves do not overlap.
 // Release on success, failure, and cancel. The engine's `defer` does that.
+//
+// Methods stay synchronous on purpose. `SubtitleEngine` releases from `defer`,
+// which cannot `await`. The lock is taken only inside `withLock`, never from
+// the async function itself.
 
 /// Claims final `.srt` paths for one run. Safe to share across extraction tasks.
 public final class OutputReservation: @unchecked Sendable {
     private let lock = NSLock()
     private var held: Set<String> = []
-    private var waiters: [String: [CheckedContinuation<Void, Never>]] = []
+    private var waiters: [String: [CheckedContinuation<Void, Never>]] = [:]
 
     public init() {}
 
     /// True when an extraction has claimed `path` and not released it.
     public func isReserved(_ path: String) -> Bool {
         let path = Self.key(path)
-        lock.lock()
-        defer { lock.unlock() }
-        return held.contains(path)
+        return lock.withLock {
+            held.contains(path)
+        }
     }
 
     /// Claims `path` when it is free. False means another job holds it.
     /// Skip and Add a number use that as "already exists" and do not wait.
     public func tryClaim(_ path: String) -> Bool {
         let path = Self.key(path)
-        lock.lock()
-        defer { lock.unlock() }
-        if held.contains(path) { return false }
-        held.insert(path)
-        return true
+        return lock.withLock {
+            if held.contains(path) { return false }
+            held.insert(path)
+            return true
+        }
     }
 
     /// Waits until `path` is free, then claims it. Overwrite uses this so two
     /// jobs cannot move onto the same final name at once.
     public func claimExclusive(_ path: String) async {
         let path = Self.key(path)
-        lock.lock()
-        if !held.contains(path) {
-            held.insert(path)
-            lock.unlock()
-            return
-        }
-        lock.unlock()
+        if tryClaim(path) { return }
 
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            self.lock.lock()
-            if !self.held.contains(path) {
-                self.held.insert(path)
-                self.lock.unlock()
+            let claimed = self.claimOrEnqueue(path, continuation)
+            if claimed {
                 continuation.resume()
-                return
             }
-            self.waiters[path, default: []].append(continuation)
-            self.lock.unlock()
         }
     }
 
@@ -70,21 +63,38 @@ public final class OutputReservation: @unchecked Sendable {
 
     public func release(_ path: String) {
         let path = Self.key(path)
-        lock.lock()
-        if var queue = waiters[path], !queue.isEmpty {
-            let next = queue.removeFirst()
-            if queue.isEmpty {
-                waiters[path] = nil
-            } else {
-                waiters[path] = queue
+        let next: CheckedContinuation<Void, Never>? = lock.withLock {
+            if var queue = waiters[path], !queue.isEmpty {
+                let next = queue.removeFirst()
+                if queue.isEmpty {
+                    waiters[path] = nil
+                } else {
+                    waiters[path] = queue
+                }
+                // `path` stays held. The resumed job owns it and must release it.
+                return next
             }
-            // `path` stays held. The resumed job owns it and must release it.
-            lock.unlock()
-            next.resume()
-            return
+            held.remove(path)
+            return nil
         }
-        held.remove(path)
-        lock.unlock()
+        next?.resume()
+    }
+
+    /// Claims `path` when it became free before this waiter was queued.
+    /// True means the caller holds it and should resume immediately.
+    /// False means `continuation` is queued and `release` will resume it.
+    private func claimOrEnqueue(
+        _ path: String,
+        _ continuation: CheckedContinuation<Void, Never>
+    ) -> Bool {
+        lock.withLock {
+            if !held.contains(path) {
+                held.insert(path)
+                return true
+            }
+            waiters[path, default: []].append(continuation)
+            return false
+        }
     }
 
     private static func key(_ path: String) -> String {
