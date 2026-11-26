@@ -1,5 +1,8 @@
 # MP4SubRip
 
+> [!WARNING]
+> Moved to Arezhik/media-forge
+
 A native macOS app (SwiftUI, macOS 14.0 or later, universal for Apple silicon and Intel).
 Add an MP4, then click Extract Subtitles. The app writes the embedded text subtitles out as .srt files.
 
