@@ -286,8 +286,9 @@ public enum RunProgress {
     }
 
     private static func tally(_ rows: [RunRow]) -> Counts {
-        var saved: [String] = []
-        var existed: [String] = []
+        var saved = 0
+        var existed = 0
+        var paths: [String] = []
         var succeeded = 0
         var failed = 0
         var noSubtitles = 0
@@ -304,8 +305,11 @@ public enum RunProgress {
                 switch finish {
                 case let .succeeded(written, already):
                     succeeded += 1
-                    saved.append(contentsOf: written)
-                    existed.append(contentsOf: already)
+                    saved += written.count
+                    existed += already.count
+                    // Queue order: this file's new subtitles, then the ones it skipped.
+                    paths.append(contentsOf: written)
+                    paths.append(contentsOf: already)
                 case .failed:
                     failed += 1
                 case .noSubtitles:
@@ -328,9 +332,9 @@ public enum RunProgress {
             noSubtitles: noSubtitles,
             imageOnly: imageOnly,
             skipped: skipped,
-            saved: saved.count,
-            existed: existed.count,
-            paths: saved + existed,
+            saved: saved,
+            existed: existed,
+            paths: paths,
             fraction: overallFraction(rows)
         )
     }
